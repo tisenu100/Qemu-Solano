@@ -14,6 +14,10 @@ config SMBUS_EEPROM
     bool
     select SMBUS
 
+config ICH2_SMBUS
+    bool
+    select SMBUS
+
 config ARM_SBCON_I2C
     bool
     select BITBANG_I2C

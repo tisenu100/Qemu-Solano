@@ -134,6 +134,10 @@ struct AC97LinkState {
     int bup_flag;
     MemoryRegion io_nam;
     MemoryRegion io_nabm;
+
+    /* NOTE: Through the most part. Codecs are the same */
+    uint16_t vendor_id;
+    uint16_t device_id;
 };
 
 enum {
@@ -479,11 +483,9 @@ static void mixer_reset(AC97LinkState *s)
     mixer_store(s, AC97_3D_Control, 0x0000);
     mixer_store(s, AC97_Powerdown_Ctrl_Stat, 0x000f);
 
-    /*
-     * Sigmatel 9700 (STAC9700)
-     */
-    mixer_store(s, AC97_Vendor_ID1, 0x8384);
-    mixer_store(s, AC97_Vendor_ID2, 0x7600); /* 7608 */
+    /* Default values are from Sigmatel 9700 */
+    mixer_store(s, AC97_Vendor_ID1, s->vendor_id);
+    mixer_store(s, AC97_Vendor_ID2, s->device_id);
 
     mixer_store(s, AC97_Extended_Audio_ID, 0x0809);
     mixer_store(s, AC97_Extended_Audio_Ctrl_Stat, 0x0009);
@@ -708,6 +710,11 @@ static uint32_t nabm_readw(void *opaque, uint32_t addr)
     uint32_t val = ~0U;
 
     switch (addr) {
+    case CAS:
+        dolog("CAS %d\n", s->cas);
+        val = s->cas;
+        s->cas = 1;
+        break;
     case PI_SR:
     case PO_SR:
     case MC_SR:
@@ -736,6 +743,11 @@ static uint32_t nabm_readl(void *opaque, uint32_t addr)
     uint32_t val = ~0U;
 
     switch (addr) {
+    case CAS:
+        dolog("CAS %d\n", s->cas);
+        val = s->cas;
+        s->cas = 1;
+        break;
     case PI_BDBAR:
     case PO_BDBAR:
     case MC_BDBAR:
@@ -1302,7 +1314,7 @@ static void ac97_realize(PCIDevice *dev, Error **errp)
     c[PCI_BASE_ADDRESS_0 + 7] = 0x00;
 
     c[PCI_INTERRUPT_LINE] = 0x00;      /* intr_ln interrupt line rw */
-    c[PCI_INTERRUPT_PIN] = 0x01;      /* intr_pn interrupt pin ro */
+    c[PCI_INTERRUPT_PIN] = 0x02;      /* intr_pn interrupt pin ro */
 
     memory_region_init_io(&s->io_nam, OBJECT(s), &ac97_io_nam_ops, s,
                           "ac97-nam", 1024);
@@ -1326,6 +1338,8 @@ static void ac97_exit(PCIDevice *dev)
 
 static const Property ac97_properties[] = {
     DEFINE_AUDIO_PROPERTIES(AC97LinkState, card),
+    DEFINE_PROP_UINT16("ac97-vendor", AC97LinkState, vendor_id, 0x8384),
+    DEFINE_PROP_UINT16("ac97-device", AC97LinkState, device_id, 0x7600),
 };
 
 static void ac97_class_init(ObjectClass *klass, const void *data)
@@ -1336,7 +1350,7 @@ static void ac97_class_init(ObjectClass *klass, const void *data)
     k->realize = ac97_realize;
     k->exit = ac97_exit;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
-    k->device_id = PCI_DEVICE_ID_INTEL_82801AA_5;
+    k->device_id = PCI_DEVICE_ID_INTEL_82801BA_5;
     k->revision = 0x01;
     k->class_id = PCI_CLASS_MULTIMEDIA_AUDIO;
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);

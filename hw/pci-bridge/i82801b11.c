@@ -119,3 +119,99 @@ static void d2pbr_register(void)
 }
 
 type_init(d2pbr_register);
+
+static void ich2_pci_bridge_class_init(ObjectClass *klass, const void *data)
+{
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    k->vendor_id = PCI_VENDOR_ID_INTEL;
+    k->device_id = PCI_DEVICE_ID_INTEL_ICH2_PCI;
+    k->revision = 0x01;
+    k->realize = i82801b11_bridge_realize;
+    k->config_write = pci_bridge_write_config;
+    device_class_set_legacy_reset(dc, pci_bridge_reset);
+    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
+}
+
+static const TypeInfo ich2_pci_bridge_info = {
+    .name          = "ich2-pci-bridge",
+    .parent        = TYPE_PCI_BRIDGE,
+    .instance_size = sizeof(I82801b11Bridge),
+    .class_init    = ich2_pci_bridge_class_init,
+    .interfaces = (const InterfaceInfo[]) {
+        { INTERFACE_CONVENTIONAL_PCI_DEVICE },
+        { },
+    },
+};
+
+static void ich2_pci_bridge_register(void)
+{
+    type_register_static(&ich2_pci_bridge_info);
+}
+
+type_init(ich2_pci_bridge_register);
+
+static void brookdale_agp_bridge_class_init(ObjectClass *klass, const void *data)
+{
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    k->vendor_id = PCI_VENDOR_ID_INTEL;
+    k->device_id = PCI_DEVICE_ID_INTEL_I845_AGP;
+    k->revision = 0x01;
+    k->realize = i82801b11_bridge_realize;
+    k->config_write = pci_bridge_write_config;
+    device_class_set_legacy_reset(dc, pci_bridge_reset);
+    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
+}
+
+static const TypeInfo brookdale_agp_bridge_info = {
+    .name          = "brookdale-agp-bridge",
+    .parent        = TYPE_PCI_BRIDGE,
+    .instance_size = sizeof(I82801b11Bridge),
+    .class_init    = brookdale_agp_bridge_class_init,
+    .interfaces = (const InterfaceInfo[]) {
+        { INTERFACE_CONVENTIONAL_PCI_DEVICE },
+        { },
+    },
+};
+
+static void brookdale_agp_bridge_register(void)
+{
+    type_register_static(&brookdale_agp_bridge_info);
+}
+
+type_init(brookdale_agp_bridge_register);
+
+static void solano_agp_bridge_class_init(ObjectClass *klass, const void *data)
+{
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    k->vendor_id = PCI_VENDOR_ID_INTEL;
+    k->device_id = PCI_DEVICE_ID_INTEL_I815E_AGP;
+    k->revision = 0x01;
+    k->realize = i82801b11_bridge_realize;
+    k->config_write = pci_bridge_write_config;
+    device_class_set_legacy_reset(dc, pci_bridge_reset);
+    set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
+}
+
+static const TypeInfo solano_agp_bridge_info = {
+    .name          = "solano-agp-bridge",
+    .parent        = TYPE_PCI_BRIDGE,
+    .instance_size = sizeof(I82801b11Bridge),
+    .class_init    = solano_agp_bridge_class_init,
+    .interfaces = (const InterfaceInfo[]) {
+        { INTERFACE_CONVENTIONAL_PCI_DEVICE },
+        { },
+    },
+};
+
+static void solano_agp_bridge_register(void)
+{
+    type_register_static(&solano_agp_bridge_info);
+}
+
+type_init(solano_agp_bridge_register);

@@ -93,6 +93,8 @@ void usb_uhci_common_realize(PCIDevice *dev, Error **errp);
 
 #define TYPE_PIIX3_USB_UHCI "piix3-usb-uhci"
 #define TYPE_PIIX4_USB_UHCI "piix4-usb-uhci"
+#define TYPE_ICH2_USB_UHCI1 "ich2-usb-uhci1"
+#define TYPE_ICH2_USB_UHCI2 "ich2-usb-uhci2"
 #define TYPE_ICH9_USB_UHCI(fn) "ich9-usb-uhci" #fn
 
 #endif

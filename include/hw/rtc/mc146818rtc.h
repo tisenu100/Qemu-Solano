@@ -14,6 +14,10 @@
 #include "qemu/timer.h"
 #include "hw/isa/isa.h"
 #include "qom/object.h"
+#include "system/block-backend-global-state.h"
+#include "system/block-backend-common.h"
+#include "system/block-backend-io.h"
+#include "system/blockdev.h"
 
 #define TYPE_MC146818_RTC "mc146818rtc"
 OBJECT_DECLARE_SIMPLE_TYPE(MC146818RtcState, MC146818_RTC)
@@ -21,12 +25,21 @@ OBJECT_DECLARE_SIMPLE_TYPE(MC146818RtcState, MC146818_RTC)
 struct MC146818RtcState {
     ISADevice parent_obj;
 
-    MemoryRegion io;
-    MemoryRegion coalesced_io;
-    uint8_t cmos_data[128];
+    bool is_file;
+    DriveInfo *dinfo;
+    BlockBackend *blk;
+
+    MemoryRegion io[2];
+    MemoryRegion coalesced_io[2];
+
+    MemoryRegion extended_io[2];
+    MemoryRegion extended_coalesced_io[2];
+
+    uint8_t cmos_data[256];
     uint8_t cmos_index;
     uint8_t isairq;
     uint16_t io_base;
+    uint16_t extended_io_base;
     int32_t base_year;
     uint64_t base_rtc;
     uint64_t last_update;

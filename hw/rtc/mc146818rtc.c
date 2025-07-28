@@ -37,6 +37,10 @@
 #include "system/reset.h"
 #include "system/runstate.h"
 #include "system/rtc.h"
+#include "system/block-backend-global-state.h"
+#include "system/block-backend-common.h"
+#include "system/block-backend-io.h"
+#include "system/blockdev.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/rtc/mc146818rtc_regs.h"
 #include "migration/vmstate.h"
@@ -547,6 +551,26 @@ static void cmos_ioport_write(void *opaque, hwaddr addr,
             s->cmos_data[s->cmos_index] = data;
             break;
         }
+
+        if(s->blk) {
+            blk_pwrite(s->blk, 15, 256, s->cmos_data, 0);
+        }
+    }
+}
+
+static void extended_cmos_ioport_write(void *opaque, hwaddr addr,
+                                       uint64_t data, unsigned size)
+{
+    MC146818RtcState *s = opaque;
+
+    if((addr & 1) == 0) {
+        s->cmos_index = data & 0x7f;
+        return;
+    } else {
+        s->cmos_data[s->cmos_index + 0x80] = data;
+        if(s->blk) {
+            blk_pwrite(s->blk, 15, 256, s->cmos_data, 0);
+        }
     }
 }
 
@@ -732,6 +756,17 @@ static uint64_t cmos_ioport_read(void *opaque, hwaddr addr,
     }
 }
 
+static uint64_t extended_cmos_ioport_read(void *opaque, hwaddr addr,
+                                         unsigned size)
+{
+    MC146818RtcState *s = opaque;
+
+    if((addr & 1) == 0)
+        return s->cmos_index & 0x7f;
+    else
+        return s->cmos_data[s->cmos_index + 0x80];
+}
+
 void mc146818rtc_set_cmos_data(MC146818RtcState *s, int addr, int val)
 {
     if (addr >= 0 && addr <= 127)
@@ -863,6 +898,16 @@ static const MemoryRegionOps cmos_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
+static const MemoryRegionOps extended_cmos_ops = {
+    .read = extended_cmos_ioport_read,
+    .write = extended_cmos_ioport_write,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
 static void rtc_get_date(Object *obj, struct tm *current_tm, Error **errp)
 {
     MC146818RtcState *s = MC146818_RTC(obj);
@@ -875,6 +920,29 @@ static void rtc_realizefn(DeviceState *dev, Error **errp)
 {
     ISADevice *isadev = ISA_DEVICE(dev);
     MC146818RtcState *s = MC146818_RTC(dev);
+
+    s->dinfo = drive_get(IF_MTD, 0, 0);
+
+    if(s->dinfo) {
+        qdev_prop_set_drive_err(dev, "drive", blk_by_legacy_dinfo(s->dinfo), errp);
+
+        if (blk_getlength(s->blk) > 512) {
+            error_setg(errp, "CMOS filesize is beyond 512 bytes");
+            return;
+        }
+
+        if (s->blk) {
+            if (blk_set_perm(s->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE, BLK_PERM_ALL, errp) < 0) {
+                error_setg(errp, "failed to set CMOS block permissions");
+                return;
+            }
+
+            if (blk_pread(s->blk, 15, 256, s->cmos_data, 0) < 0) {
+                error_setg(errp, "failed to read CMOS data from file");
+                return;
+            }
+        }
+    }
 
     s->cmos_data[RTC_REG_A] = 0x26;
     s->cmos_data[RTC_REG_B] = 0x02;
@@ -919,15 +987,26 @@ static void rtc_realizefn(DeviceState *dev, Error **errp)
     s->suspend_notifier.notify = rtc_notify_suspend;
     qemu_register_suspend_notifier(&s->suspend_notifier);
 
-    memory_region_init_io(&s->io, OBJECT(s), &cmos_ops, s, "rtc", 2);
-    isa_register_ioport(isadev, &s->io, s->io_base);
+    for(int i = 0; i < 2; i++) {
+        memory_region_init_io(&s->io[i], OBJECT(s), &cmos_ops, s, "rtc", 2);
+        isa_register_ioport(isadev, &s->io[i], s->io_base + (i * 4));
 
-    /* register rtc 0x70 port for coalesced_pio */
-    memory_region_set_flush_coalesced(&s->io);
-    memory_region_init_io(&s->coalesced_io, OBJECT(s), &cmos_ops,
-                          s, "rtc-index", 1);
-    memory_region_add_subregion(&s->io, 0, &s->coalesced_io);
-    memory_region_add_coalescing(&s->coalesced_io, 0, 1);
+        memory_region_init_io(&s->extended_io[i], OBJECT(s), &extended_cmos_ops, s, "extended_rtc", 2);
+        isa_register_ioport(isadev, &s->extended_io[i], s->extended_io_base + (i * 4));
+
+        /* register rtc 0x70 port for coalesced_pio */
+        memory_region_set_flush_coalesced(&s->io[i]);
+        memory_region_init_io(&s->coalesced_io[i], OBJECT(s), &cmos_ops,
+                            s, "rtc-index", 1);
+        memory_region_add_subregion(&s->io[i], 0, &s->coalesced_io[i]);
+        memory_region_add_coalescing(&s->coalesced_io[i], 0, 1);
+
+        memory_region_set_flush_coalesced(&s->extended_io[i]);
+        memory_region_init_io(&s->extended_coalesced_io[i], OBJECT(s), &extended_cmos_ops,
+                            s, "extended-rtc-index", 1);
+        memory_region_add_subregion(&s->extended_io[i], 0, &s->extended_coalesced_io[i]);
+        memory_region_add_coalescing(&s->extended_coalesced_io[i], 0, 1);
+    }
 
     object_property_add_tm(OBJECT(s), "date", rtc_get_date);
 
@@ -961,9 +1040,11 @@ MC146818RtcState *mc146818_rtc_init(ISABus *bus, int base_year,
 static const Property mc146818rtc_properties[] = {
     DEFINE_PROP_INT32("base_year", MC146818RtcState, base_year, 1980),
     DEFINE_PROP_UINT16("iobase", MC146818RtcState, io_base, RTC_ISA_BASE),
+    DEFINE_PROP_UINT16("extended_iobase", MC146818RtcState, extended_io_base, RTC_ISA_BASE + 2),
     DEFINE_PROP_UINT8("irq", MC146818RtcState, isairq, RTC_ISA_IRQ),
     DEFINE_PROP_LOSTTICKPOLICY("lost_tick_policy", MC146818RtcState,
                                lost_tick_policy, LOST_TICK_POLICY_DISCARD),
+    DEFINE_PROP_DRIVE("drive", MC146818RtcState, blk),
 };
 
 static void rtc_reset_enter(Object *obj, ResetType type)

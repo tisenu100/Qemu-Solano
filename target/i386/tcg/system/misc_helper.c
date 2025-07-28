@@ -485,6 +485,16 @@ void helper_rdmsr(CPUX86State *env)
 
         break;
     }
+
+    /* Pentium III specific MSR's */
+    case 0x2a:
+        val = 0xc5040020;
+    break;
+
+    case 0x11e:
+        val = 0x007447e1;
+    break;
+
     default:
         if ((uint32_t)env->regs[R_ECX] >= MSR_MC0_CTL
             && (uint32_t)env->regs[R_ECX] < MSR_MC0_CTL +

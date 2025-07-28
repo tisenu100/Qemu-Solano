@@ -592,11 +592,11 @@ static void acpi_pm_cnt_write(void *opaque, hwaddr addr, uint64_t val,
         /* change suspend type */
         uint16_t sus_typ = (val >> 10) & 7;
         switch (sus_typ) {
-        case 0: /* soft power off */
-            qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
-            break;
-        case 1:
+        case 5:
             qemu_system_suspend_request();
+            break;
+        case 7: /* soft power off */
+            qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
             break;
         default:
             if (sus_typ == ar->pm1.cnt.s4_val) { /* S4 request */

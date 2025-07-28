@@ -1325,6 +1325,20 @@ static UHCIInfo uhci_info[] = {
         .irq_pin   = 3,
         .unplug    = true,
     },{
+        .name      = TYPE_ICH2_USB_UHCI1,
+        .vendor_id = PCI_VENDOR_ID_INTEL,
+        .device_id = PCI_DEVICE_ID_INTEL_ICH2_UHCI1,
+        .revision  = 0x01,
+        .irq_pin   = 3,
+        .unplug    = true,
+    },{
+        .name      = TYPE_ICH2_USB_UHCI2,
+        .vendor_id = PCI_VENDOR_ID_INTEL,
+        .device_id = PCI_DEVICE_ID_INTEL_ICH2_UHCI2,
+        .revision  = 0x01,
+        .irq_pin   = 3,
+        .unplug    = true,
+    },{
         .name      = TYPE_ICH9_USB_UHCI(1), /* 00:1d.0 */
         .vendor_id = PCI_VENDOR_ID_INTEL,
         .device_id = PCI_DEVICE_ID_INTEL_82801I_UHCI1,

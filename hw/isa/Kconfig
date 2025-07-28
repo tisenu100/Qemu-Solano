@@ -27,6 +27,10 @@ config FDC37M81X
     bool
     select ISA_SUPERIO
 
+config W83627HF
+    bool
+    select ISA_SUPERIO
+
 config PC87312
     bool
     select ISA_SUPERIO
@@ -48,6 +52,12 @@ config PIIX
     select ISA_BUS
     select MC146818RTC
     select USB_UHCI
+
+config ICH2
+    bool
+    select IDE_PIIX
+    select ISA_BUS
+    select MC146818RTC
 
 config VT82C686
     bool

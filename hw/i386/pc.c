@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
+#include "qemu/qemu-print.h"
 #include "exec/target_page.h"
 #include "hw/i386/pc.h"
 #include "hw/char/serial-isa.h"
@@ -289,6 +290,7 @@ GSIState *pc_gsi_create(qemu_irq **irqs, bool pci_enabled)
 static void ioport80_write(void *opaque, hwaddr addr, uint64_t data,
                            unsigned size)
 {
+//    qemu_printf("POST: %02x\n", (uint8_t)data);
 }
 
 static uint64_t ioport80_read(void *opaque, hwaddr addr, unsigned size)
@@ -631,6 +633,12 @@ void pc_machine_done(Notifier *notifier, void *data)
     }
 
     pc_cmos_init_late(pcms);
+}
+
+static
+void pc_machine_done_dummy(Notifier *notifier, void *data)
+{
+    /* DONE */
 }
 
 /* setup pci memory address space mapping into system address space */
@@ -1221,6 +1229,63 @@ void pc_basic_device_init(struct PCMachineState *pcms,
                     pcms->vmport != ON_OFF_AUTO_ON, &error_fatal);
 
     pcms->machine_done.notify = pc_machine_done;
+    qemu_add_machine_init_done_notifier(&pcms->machine_done);
+}
+
+void pc_basic_device_init_simple(struct PCMachineState *pcms,
+                                 ISABus *isa_bus, qemu_irq *gsi,
+                                 ISADevice *rtc_state)
+{
+    int pit_isa_irq = 0;
+    qemu_irq pit_alt_irq = NULL;
+    qemu_irq *a20_line;
+    ISADevice *pit = NULL;
+    MemoryRegion *ioport80_io = g_new(MemoryRegion, 1);
+    MemoryRegion *ioportF0_io = g_new(MemoryRegion, 1);
+    ISADevice *i8042, *port92, *vmmouse;
+
+    memory_region_init_io(ioport80_io, NULL, &ioport80_io_ops, NULL, "ioport80", 1);
+    memory_region_add_subregion(isa_bus->address_space_io, 0x80, ioport80_io);
+
+    memory_region_init_io(ioportF0_io, NULL, &ioportF0_io_ops, NULL, "ioportF0", 1);
+    memory_region_add_subregion(isa_bus->address_space_io, 0xf0, ioportF0_io);
+
+    object_property_add_alias(OBJECT(pcms), "rtc-time", OBJECT(rtc_state),
+                              "date");
+
+
+        if (kvm_pit_in_kernel()) {
+            pit = kvm_pit_init(isa_bus, 0x40);
+        } else {
+            pit = i8254_pit_init(isa_bus, 0x40, pit_isa_irq, pit_alt_irq);
+        }
+
+    object_property_set_link(OBJECT(pcms->pcspk), "pit",
+                             OBJECT(pit), &error_fatal);
+    isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
+
+    i8042 = isa_create_simple(isa_bus, TYPE_I8042);
+    if (!(pcms->vmport != ON_OFF_AUTO_ON)) {
+        isa_create_simple(isa_bus, TYPE_VMPORT);
+        vmmouse = isa_try_new("vmmouse");
+    } else {
+        vmmouse = NULL;
+    }
+    if (vmmouse) {
+        object_property_set_link(OBJECT(vmmouse), TYPE_I8042, OBJECT(i8042),
+                                 &error_abort);
+        isa_realize_and_unref(vmmouse, isa_bus, &error_fatal);
+    }
+    port92 = isa_create_simple(isa_bus, TYPE_PORT92);
+
+    a20_line = qemu_allocate_irqs(handle_a20_line_change, first_cpu, 2);
+    qdev_connect_gpio_out_named(DEVICE(i8042),
+                                I8042_A20_LINE, 0, a20_line[0]);
+    qdev_connect_gpio_out_named(DEVICE(port92),
+                                PORT92_A20_LINE, 0, a20_line[1]);
+    g_free(a20_line);
+
+    pcms->machine_done.notify = pc_machine_done_dummy;
     qemu_add_machine_init_done_notifier(&pcms->machine_done);
 }
 

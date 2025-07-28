@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
+#include "qemu/qemu-print.h"
 #include "qapi/error.h"
 #include "hw/boards.h"
 #include "hw/i2c/i2c.h"
@@ -56,10 +57,7 @@ static uint8_t eeprom_receive_byte(SMBusDevice *dev)
     uint8_t val = data[eeprom->offset++];
 
     eeprom->accessed = true;
-#ifdef DEBUG
-    printf("eeprom_receive_byte: addr=0x%02x val=0x%02x\n",
-           dev->i2c.address, val);
-#endif
+//    qemu_printf("eeprom_receive_byte: addr=0x%02x val=0x%02x\n", dev->i2c.address, val);
     return val;
 }
 
@@ -69,10 +67,8 @@ static int eeprom_write_data(SMBusDevice *dev, uint8_t *buf, uint8_t len)
     uint8_t *data = eeprom->data;
 
     eeprom->accessed = true;
-#ifdef DEBUG
-    printf("eeprom_write_byte: addr=0x%02x cmd=0x%02x val=0x%02x\n",
-           dev->i2c.address, buf[0], buf[1]);
-#endif
+
+//    qemu_printf("eeprom_write_byte: addr=0x%02x cmd=0x%02x val=0x%02x\n", dev->i2c.address, buf[0], buf[1]);
     /* len is guaranteed to be > 0 */
     eeprom->offset = buf[0];
     buf++;

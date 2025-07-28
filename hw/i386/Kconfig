@@ -88,6 +88,23 @@ config I440FX
     select SMBIOS_LEGACY
     select FW_CFG_DMA
 
+config SOLANO
+    bool
+    default y
+    depends on I386
+    imply VMPORT
+    imply VMMOUSE
+    select PC_PCI
+    select PC_ACPI
+    select I8254
+    select I8257
+    select I8259
+    select PCI_SOLANO
+    select ICH2
+    select IDE_ICH2
+    select ICH2_SMBUS
+    select W83627HF
+
 config ISAPC
     bool
     default y

@@ -604,7 +604,13 @@ uint64_t kvm_arch_get_supported_msr_feature(KVMState *s, uint32_t index)
         if (kvm_feature_msrs->indices[i] == index) {
             break;
         }
-    if (i == kvm_feature_msrs->nmsrs) {
+    if (index == 0x2e) { /* Pentium III specific MSR's */
+        return 0xc5040020;
+    }
+    else if(index == 0x11e) {
+        return 0x007447e1;
+    }
+    else if (i == kvm_feature_msrs->nmsrs) {
         return 0; /* if the feature MSR is not supported, simply return 0 */
     }
 
