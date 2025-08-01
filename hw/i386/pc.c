@@ -1224,6 +1224,11 @@ void pc_basic_device_init(struct PCMachineState *pcms,
             ? ON_OFF_AUTO_OFF : ON_OFF_AUTO_ON;
     }
 
+    /* Glide pass-through */
+    glidept_mm_init();
+    /* MESA pass-through */
+    mesapt_mm_init();
+
     /* Super I/O */
     pc_superio_init(isa_bus, create_fdctrl, pcms->i8042_enabled,
                     pcms->vmport != ON_OFF_AUTO_ON, &error_fatal);
@@ -1264,6 +1269,11 @@ void pc_basic_device_init_simple(struct PCMachineState *pcms,
                              OBJECT(pit), &error_fatal);
     isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
 
+    /* Glide pass-through */
+    glidept_mm_init();
+    /* MESA pass-through */
+    mesapt_mm_init();
+
     i8042 = isa_create_simple(isa_bus, TYPE_I8042);
     if (!(pcms->vmport != ON_OFF_AUTO_ON)) {
         isa_create_simple(isa_bus, TYPE_VMPORT);
@@ -1303,6 +1313,24 @@ void pc_nic_init(PCMachineClass *pcmc, ISABus *isa_bus, PCIBus *pci_bus)
     if (pci_bus) {
         pci_init_nic_devices(pci_bus, mc->default_nic);
     }
+}
+
+void glidept_mm_init(void)
+{
+    DeviceState *glidept_dev = NULL;
+
+    glidept_dev = qdev_new(TYPE_GLIDEPT);
+    sysbus_realize(SYS_BUS_DEVICE(glidept_dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(glidept_dev), 0, GLIDEPT_MM_BASE);
+}
+
+void mesapt_mm_init(void)
+{
+    DeviceState *mesapt_dev = NULL;
+
+    mesapt_dev = qdev_new(TYPE_MESAPT);
+    sysbus_realize(SYS_BUS_DEVICE(mesapt_dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(mesapt_dev), 0, MESAPT_MM_BASE);
 }
 
 void pc_i8259_create(ISABus *isa_bus, qemu_irq *i8259_irqs)

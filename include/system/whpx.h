@@ -26,6 +26,7 @@
 #ifdef CONFIG_WHPX_IS_POSSIBLE
 extern bool whpx_allowed;
 #define whpx_enabled() (whpx_allowed)
+void whpx_update_guest_pa_range(uint64_t start_pa, uint64_t size, void *host_va, int readonly, int add);
 bool whpx_apic_in_platform(void);
 #else /* !CONFIG_WHPX_IS_POSSIBLE */
 #define whpx_enabled() 0
