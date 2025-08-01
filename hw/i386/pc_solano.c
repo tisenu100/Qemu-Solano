@@ -272,7 +272,7 @@ static void pc_init(MachineState *machine)
 
     /* Realtek ALC200 */
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-vendor", 0x414c);
-    qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4170);
+    qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4710);
 
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
 
