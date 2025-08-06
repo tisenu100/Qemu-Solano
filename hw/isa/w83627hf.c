@@ -58,7 +58,7 @@ struct WinbondIOState {
     uint8_t index;
     uint8_t ldn;
     uint8_t regs[48];
-    uint8_t ldn_regs[12][208]; /* Bloat */
+    uint8_t ldn_regs[4][208]; /* Bloat */
 
     MemoryRegion io;
 };
@@ -79,7 +79,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
         return;
     }
 
-    if((s->index > 0x2f) && (s->ldn >= 12)) /* There are 11 Devices in the W83627HF */
+    if((s->index > 0x2f) && (s->ldn >= 4)) /* There are 11 Devices in the W83627HF. However not all are implemented */
         return;
 
     if(s->index > 0x2f) {
@@ -147,7 +147,7 @@ static uint64_t winbond_io_read(void *opaque, hwaddr addr, unsigned size)
         return s->index;
     }
 
-    if((s->index > 0x2f) && (s->ldn >= 12))  /* There are 11 Devices in the W83627HF */
+    if((s->index > 0x2f) && (s->ldn >= 4))  /* There are 11 Devices in the W83627HF. However not all are implemented */
         return 0xffffffffffffffffULL;
 
     if(s->index > 0x2f)
