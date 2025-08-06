@@ -40,6 +40,7 @@
 #define INDEX(index) (index - 0x30)
 #define ENABLED s->ldn_regs[s->ldn][0]
 #define ADDR ((s->ldn_regs[s->ldn][INDEX(0x60)] << 8) | s->ldn_regs[s->ldn][INDEX(0x61)])
+#define IRQ (s->ldn_regs[s->ldn][INDEX(0x70)] & 0x0f)
 
 OBJECT_DECLARE_SIMPLE_TYPE(WinbondIOState, WINBOND_W83627HF)
 struct WinbondIOState {
@@ -65,6 +66,8 @@ struct WinbondIOState {
 static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned size)
 {
     WinbondIOState *s = opaque;
+    ISAParallelState *lpt = ISA_PARALLEL(s->lpt);
+    ParallelState *lpt_internal = &lpt->state;
 
     if(!(addr & 1)) {
         if(data == 0x87) /* Normally they got to be written twice */
@@ -86,28 +89,31 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
             case 0: /* FDC */
                 isa_fdc_set_enabled(s->fdc, ENABLED);
 
-                if(ENABLED && (ADDR != 0)) {
+                if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
                     isa_fdc_set_iobase(s->fdc, ADDR);
-                    qemu_printf("Winbond W83627HF: FDC set to 0x%04x\n", ADDR);
+                    qemu_printf("Winbond W83627HF: FDC set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
             case 1: /* LPT */
-                if(ENABLED && (ADDR != 0)) {
+                isa_parallel_set_enabled(s->lpt, ENABLED);
+
+                if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
                     isa_parallel_set_iobase(s->lpt, ADDR);
-                    qemu_printf("Winbond W83627HF: LPT set to 0x%04x\n", ADDR);
+                    lpt_internal->irq = isa_get_irq(ISA_DEVICE(s), IRQ);
+                    qemu_printf("Winbond W83627HF: LPT set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
             case 2: /* UART 1 */
-                if(ENABLED && (ADDR != 0)) {
-                    qemu_printf("Winbond W83627HF: UART A set to 0x%04x\n", ADDR);
+                if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                    qemu_printf("Winbond W83627HF: UART A set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
             case 3: /* UART 2 */
-                if(ENABLED && (ADDR != 0)) {
-                    qemu_printf("Winbond W83627HF: UART B set to 0x%04x\n", ADDR);
+                if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                    qemu_printf("Winbond W83627HF: UART B set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
         }
@@ -165,8 +171,8 @@ static void w83627hf_realize(DeviceState *d, Error **errp)
     isa_fdc_init_drives(s->fdc, fd);
 
     /* W83627HF can do one LPT device */
-    isa_realize_and_unref(s->lpt, isa_bus_from_device(isa), &error_fatal);
     qdev_prop_set_chr(DEVICE(s->lpt), "chardev", parallel_hds[0]);
+    isa_realize_and_unref(s->lpt, isa_bus_from_device(isa), &error_fatal);
 
     isa_register_ioport(isa, &s->io, 0x2e);
 }
@@ -188,6 +194,8 @@ static void w83627hf_init(Object *obj)
 
 
     s->fdc = isa_new(TYPE_ISA_FDC);
+
+
     s->lpt = isa_new(TYPE_ISA_PARALLEL);
 }
 
