@@ -48,9 +48,9 @@ struct WinbondIOState {
     /*< public >*/
 
     ISADevice *fdc;
+    ISADevice *lpt;
 
     /* Unimplemented for now */
-    ISADevice *lpt;
     ISADevice *uart;
 
     bool lock;
@@ -94,6 +94,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
 
             case 1: /* LPT */
                 if(ENABLED && (ADDR != 0)) {
+                    isa_parallel_set_iobase(s->lpt, ADDR);
                     qemu_printf("Winbond W83627HF: LPT set to 0x%04x\n", ADDR);
                 }
             break;
@@ -163,6 +164,10 @@ static void w83627hf_realize(DeviceState *d, Error **errp)
     isa_realize_and_unref(s->fdc, isa_bus_from_device(isa), &error_fatal);
     isa_fdc_init_drives(s->fdc, fd);
 
+    /* W83627HF can do one LPT device */
+    isa_realize_and_unref(s->lpt, isa_bus_from_device(isa), &error_fatal);
+    qdev_prop_set_chr(DEVICE(s->lpt), "chardev", parallel_hds[0]);
+
     isa_register_ioport(isa, &s->io, 0x2e);
 }
 
@@ -183,6 +188,7 @@ static void w83627hf_init(Object *obj)
 
 
     s->fdc = isa_new(TYPE_ISA_FDC);
+    s->lpt = isa_new(TYPE_ISA_PARALLEL);
 }
 
 
