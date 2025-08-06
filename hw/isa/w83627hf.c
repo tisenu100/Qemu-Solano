@@ -128,6 +128,9 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
             break;
         }
     } else {
+        if((s->index == 0x20) || (s->index == 0x21))
+            return;
+
         s->regs[s->index] = data;
 
         if(s->index == 0x07) {
