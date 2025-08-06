@@ -87,18 +87,20 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
 
         switch(s->ldn) {
             case 0: /* FDC */
-                isa_fdc_set_enabled(s->fdc, ENABLED);
+                isa_fdc_set_enabled(s->fdc, 0);
 
                 if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                    isa_fdc_set_enabled(s->fdc, 1);
                     isa_fdc_set_iobase(s->fdc, ADDR);
                     qemu_printf("Winbond W83627HF: FDC set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
             case 1: /* LPT */
-                isa_parallel_set_enabled(s->lpt, ENABLED);
+                isa_parallel_set_enabled(s->lpt, 0);
 
                 if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                    isa_parallel_set_enabled(s->lpt, 1);
                     isa_parallel_set_iobase(s->lpt, ADDR);
                     lpt_internal->irq = isa_get_irq(ISA_DEVICE(s), IRQ);
                     qemu_printf("Winbond W83627HF: LPT set to 0x%04x with IRQ %d\n", ADDR, IRQ);
@@ -106,18 +108,20 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
             break;
 
             case 2: /* UART 1 */
-                isa_serial_set_enabled(s->uart[0], ENABLED);
+                isa_serial_set_enabled(s->uart[0], 0);
 
                 if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                    isa_serial_set_enabled(s->uart[0], 1);
                     isa_serial_set_iobase(s->uart[0], ADDR);
                     qemu_printf("Winbond W83627HF: UART A set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
             case 3: /* UART 2 */
-                isa_serial_set_enabled(s->uart[1], ENABLED);
+                isa_serial_set_enabled(s->uart[1], 0);
 
                 if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                    isa_serial_set_enabled(s->uart[1], 1);
                     isa_serial_set_iobase(s->uart[1], ADDR);
                     qemu_printf("Winbond W83627HF: UART B set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
