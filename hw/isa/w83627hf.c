@@ -190,10 +190,32 @@ static void w83627hf_realize(DeviceState *d, Error **errp)
     isa_register_ioport(isa, &s->io, 0x2e);
 }
 
+static void w83627hf_reset(DeviceState *d)
+{
+    WinbondIOState *s = WINBOND_W83627HF(d);
+
+    s->regs[0x20] = 0x52;
+    s->regs[0x21] = 0x17;
+    s->regs[0x22] = 0xff; /* Hardware Powerdown. It provides no function here. */
+    s->regs[0x2a] = 0x7c;
+    s->regs[0x2b] = 0xc0;
+
+    /*
+       LDN devices have defaults if PNPCVS(Register 24h Bit 0) is 1
+       However the BIOS program the devices nonetheless so ignore
+    */
+
+    isa_fdc_set_enabled(s->fdc, 0);
+    isa_parallel_set_enabled(s->lpt, 0);
+    isa_serial_set_enabled(s->uart[0], 0);
+    isa_serial_set_enabled(s->uart[1], 0);
+}
+
 static void w83627hf_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_legacy_reset(dc, w83627hf_reset);
     dc->realize = w83627hf_realize;
     dc->user_creatable = false;
 }
