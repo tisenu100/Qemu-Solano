@@ -28,6 +28,8 @@
 #include "qemu/osdep.h"
 #include "qemu/qemu-print.h"
 #include "hw/block/fdc.h"
+#include "hw/char/serial.h"
+#include "hw/char/parallel.h"
 #include "hw/char/parallel-isa.h"
 #include "hw/char/serial-isa.h"
 #include "hw/isa/isa.h"
@@ -50,9 +52,7 @@ struct WinbondIOState {
 
     ISADevice *fdc;
     ISADevice *lpt;
-
-    /* Unimplemented for now */
-    ISADevice *uart;
+    ISADevice *uart[2];
 
     bool lock;
     uint8_t index;
@@ -106,13 +106,19 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
             break;
 
             case 2: /* UART 1 */
+                isa_serial_set_enabled(s->uart[0], ENABLED);
+
                 if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                    isa_serial_set_iobase(s->uart[0], ADDR);
                     qemu_printf("Winbond W83627HF: UART A set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
             case 3: /* UART 2 */
+                isa_serial_set_enabled(s->uart[1], ENABLED);
+
                 if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                    isa_serial_set_iobase(s->uart[1], ADDR);
                     qemu_printf("Winbond W83627HF: UART B set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
@@ -174,6 +180,13 @@ static void w83627hf_realize(DeviceState *d, Error **errp)
     qdev_prop_set_chr(DEVICE(s->lpt), "chardev", parallel_hds[0]);
     isa_realize_and_unref(s->lpt, isa_bus_from_device(isa), &error_fatal);
 
+    /* W83627HF can do 2 NS16550 UART devices */
+    qdev_prop_set_chr(DEVICE(s->uart[0]), "chardev", serial_hd(0));
+    isa_realize_and_unref(s->uart[0], isa_bus_from_device(isa), &error_fatal);
+
+    qdev_prop_set_chr(DEVICE(s->uart[1]), "chardev", serial_hd(1));
+    isa_realize_and_unref(s->uart[1], isa_bus_from_device(isa), &error_fatal);
+
     isa_register_ioport(isa, &s->io, 0x2e);
 }
 
@@ -197,6 +210,10 @@ static void w83627hf_init(Object *obj)
 
 
     s->lpt = isa_new(TYPE_ISA_PARALLEL);
+
+
+    s->uart[0] = isa_new(TYPE_ISA_SERIAL);
+    s->uart[1] = isa_new(TYPE_ISA_SERIAL);
 }
 
 
