@@ -221,8 +221,6 @@ static void pc_init(MachineState *machine)
 
     i8254_pit_init(isa_bus, 0x40, 0, NULL);
     i8257_dma_init(OBJECT(lpc_dev), isa_bus, 1);
-    pc_i8259_create(isa_bus, gsi_state->i8259_irq);
-    ioapic_init_gsi(gsi_state, phb);
     smi_irq = qemu_allocate_irq(pc_acpi_smi_interrupt, first_cpu, 0);
     qdev_connect_gpio_out_named(lpc_dev, "smi-irq", 0, smi_irq);
 
@@ -275,6 +273,10 @@ static void pc_init(MachineState *machine)
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4710);
 
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
+
+    qemu_printf("PC: Setting up interrupts\n");
+    pc_i8259_create(isa_bus, gsi_state->i8259_irq);
+    ioapic_init_gsi(gsi_state, phb);
 
     qemu_printf("PC: Passing control to the BIOS\n");
 }
