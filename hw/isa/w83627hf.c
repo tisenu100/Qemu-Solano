@@ -151,7 +151,7 @@ static uint64_t winbond_io_read(void *opaque, hwaddr addr, unsigned size)
     }
 
     if((s->index > 0x2f) && (s->ldn >= 4))  /* There are 11 Devices in the W83627HF. However not all are implemented */
-        return 0xffffffffffffffffULL;
+        return 0;
 
     if(s->index > 0x2f)
         return s->ldn_regs[s->ldn][s->index - 0x60];
