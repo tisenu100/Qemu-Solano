@@ -26,6 +26,7 @@ typedef struct KBDState {
     bool outport_present;
     bool extended_state;
     bool extended_state_loaded;
+    bool is_warm_reset;
     /* Bitmask of devices with data available.  */
     uint8_t pending;
     uint8_t obdata;
