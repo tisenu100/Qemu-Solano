@@ -312,7 +312,7 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
     acpi_pm_tco_init(&d->tco, &d->acpi_io);
 
     memory_region_init_io(&d->gpio_io, OBJECT(dev), &gpio_ops, &d->ar, "gpio", 8);
-    memory_region_add_subregion_overlap(&d->gpio_io, 0x28, &d->gpio_io, 1);
+    memory_region_add_subregion_overlap(&d->acpi_io, 0x28, &d->gpio_io, 1);
 
     memory_region_init_io(&d->smi_io, OBJECT(dev), &smi_ops, d, "smi-control", 8);
     memory_region_add_subregion_overlap(&d->acpi_io, 0x30, &d->smi_io, 1);
