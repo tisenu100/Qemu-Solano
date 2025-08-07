@@ -102,7 +102,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
                 if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
                     isa_parallel_set_enabled(s->lpt, 1);
                     isa_parallel_set_iobase(s->lpt, ADDR);
-                    lpt_internal->irq = isa_get_irq(ISA_DEVICE(s), IRQ);
+                    lpt_internal->irq = isa_get_irq(ISA_DEVICE(s->lpt), IRQ);
                     qemu_printf("Winbond W83627HF: LPT set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
