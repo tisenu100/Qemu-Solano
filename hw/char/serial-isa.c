@@ -194,6 +194,12 @@ void isa_serial_set_iobase(ISADevice *serial, hwaddr iobase)
     memory_region_set_address(&s->state.io, s->iobase);
 }
 
+void isa_serial_set_irq(ISADevice *serial, int irq)
+{
+    ISASerialState *s = ISA_SERIAL(serial);
+    s->state.irq = isa_get_irq(serial, irq);
+}
+
 void isa_serial_set_enabled(ISADevice *serial, bool enabled)
 {
     memory_region_set_enabled(&ISA_SERIAL(serial)->state.io, enabled);
