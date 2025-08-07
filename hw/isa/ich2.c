@@ -308,7 +308,7 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
     acpi_pm_tmr_init(&d->ar, pm_tmr_timer, &d->acpi_io);
     acpi_pm1_evt_init(&d->ar, pm_tmr_timer, &d->acpi_io);
     acpi_pm1_cnt_init(&d->ar, &d->acpi_io, 0, 0, 6, 1);
-    acpi_gpe_init(&d->ar, 4);
+    acpi_gpe_init(&d->ar, 8);
     acpi_pm_tco_init(&d->tco, &d->acpi_io);
 
     memory_region_init_io(&d->gpio_io, OBJECT(dev), &gpio_ops, &d->ar, "gpio", 8);
