@@ -94,11 +94,8 @@ static void i845_update_smram(PCII845State *d)
         if(val & 0x40) { /* D_OPEN */
             memory_region_set_enabled(&d->low_smram, true);
         }
-        else if(val & 0x20) { /* D_CLS */
+        else {
             memory_region_set_enabled(&d->low_smram, true);
-            memory_region_set_enabled(&d->smram_region, true);
-        }
-        else { /* Enabled SMM Space but inaccessible */
             memory_region_set_enabled(&d->smram_region, true);
         }
     }
