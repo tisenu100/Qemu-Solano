@@ -859,7 +859,7 @@ static void sched_wndproc(void *opaque)
     if (s->res == -1) {
         if (s->render_pause) {
             SDL_DestroyTexture(s->scon->texture);
-            s->scon->texture = 0;
+            s->scon->texture = NULL;
         }
         else {
             if (!s->scon->real_renderer)
@@ -914,7 +914,9 @@ static void sched_wndproc(void *opaque)
             }
         }
         SDL_DestroyRenderer(s->scon->real_renderer);
-        s->scon->real_renderer = 0;
+        SDL_DestroyTexture(s->scon->texture);
+        s->scon->real_renderer = NULL;
+        s->scon->texture = NULL;
         s->scon->winctx = SDL_GL_GetCurrentContext();
         s->scon->winctx = (s->scon->winctx)? s->scon->winctx:SDL_GL_CreateContext(s->scon->real_window);
         if (!s->scon->winctx) {
@@ -927,26 +929,22 @@ static void sched_wndproc(void *opaque)
         SDL_GL_MakeCurrent(s->scon->real_window, NULL);
     }
     else {
-        SDL_GL_DeleteContext(s->scon->winctx);
-        s->scon->winctx = 0;
-        s->render_pause = 0;
-        SDL_GL_ResetAttributes();
-        if (!s->GLon12) {
-            if (s->scon->texture) {
-                SDL_DestroyTexture(s->scon->texture);
-                s->scon->texture = 0;
-            }
-            SDL_SetHint(SDL_HINT_RENDER_DRIVER, "");
-            sdl_gui_restart(s->scon, s->icon);
-        }
-        else {
+        if (s->GLon12) {
             if (!s->scon->real_renderer)
                 s->scon->real_renderer = SDL_CreateRenderer(s->scon->real_window, -1 ,0);
         }
+    else {
+        SDL_GL_DeleteContext(s->scon->winctx);
+        SDL_GL_ResetAttributes();
+        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "");
+        s->scon->winctx = NULL;
+        sdl_gui_restart(s->scon, s->icon);
+    }
         sdl2_2d_switch(&s->scon->dcl, s->scon->surface);
+        s->render_pause = 0;
         timer_del(s->ts);
         timer_free(s->ts);
-        s->ts = 0;
+        s->ts = NULL;
     }
     if (s->res > 0)
         SDL_SetWindowSize(s->scon->real_window, (s->res & 0xFFFFU), (s->res >> 0x10));
