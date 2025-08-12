@@ -79,6 +79,9 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
         return;
     }
 
+    if(s->lock) /* Don't write if the chip is locked */
+        return;
+
     if((s->index > 0x2f) && (s->ldn >= 4)) /* There are 11 Devices in the W83627HF. However not all are implemented */
         return;
 
