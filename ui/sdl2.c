@@ -913,8 +913,8 @@ static void sched_wndproc(void *opaque)
                     break;
             }
         }
-        SDL_DestroyRenderer(s->scon->real_renderer);
         SDL_DestroyTexture(s->scon->texture);
+        SDL_DestroyRenderer(s->scon->real_renderer);
         s->scon->real_renderer = NULL;
         s->scon->texture = NULL;
         s->scon->winctx = SDL_GL_GetCurrentContext();
