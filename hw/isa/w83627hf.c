@@ -89,7 +89,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
             case 0: /* FDC */
                 isa_fdc_set_enabled(s->fdc, 0);
 
-                if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                if(ENABLED && (ADDR != 0)) {
                     isa_fdc_set_enabled(s->fdc, 1);
                     isa_fdc_set_iobase(s->fdc, ADDR);
                     isa_fdc_set_irq(s->fdc, IRQ);
@@ -100,7 +100,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
             case 1: /* LPT */
                 isa_parallel_set_enabled(s->lpt, 0);
 
-                if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                if(ENABLED && (ADDR != 0)) {
                     isa_parallel_set_enabled(s->lpt, 1);
                     isa_parallel_set_iobase(s->lpt, ADDR);
                     lpt_internal->irq = isa_get_irq(ISA_DEVICE(s->lpt), IRQ);
@@ -111,7 +111,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
             case 2: /* UART 1 */
                 isa_serial_set_enabled(s->uart[0], 0);
 
-                if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                if(ENABLED && (ADDR != 0)) {
                     isa_serial_set_enabled(s->uart[0], 1);
                     isa_serial_set_iobase(s->uart[0], ADDR);
                     isa_serial_set_irq(s->uart[0], IRQ);
@@ -122,7 +122,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
             case 3: /* UART 2 */
                 isa_serial_set_enabled(s->uart[1], 0);
 
-                if(ENABLED && (ADDR != 0) && (IRQ != 0)) {
+                if(ENABLED && (ADDR != 0)) {
                     isa_serial_set_enabled(s->uart[1], 1);
                     isa_serial_set_iobase(s->uart[1], ADDR);
                     isa_serial_set_irq(s->uart[1], IRQ);
