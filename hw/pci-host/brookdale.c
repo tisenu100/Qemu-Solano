@@ -222,7 +222,6 @@ static void i845_reset(DeviceState *dev)
     pci_set_long(pci_dev->config + 0x10, 0x00000008);
     pci_set_byte(pci_dev->config + 0x34, 0xa0);
     pci_set_long(pci_dev->config + 0x78, 0x00000010);
-    pci_set_long(pci_dev->config + 0x7c, 0x00000001);
     pci_set_long(pci_dev->config + 0xa0, 0x00200002);
     pci_set_long(pci_dev->config + 0xa4, 0x1f000216);
     pci_set_long(pci_dev->config + 0xe4, 0xf104a009);
