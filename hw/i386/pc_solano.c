@@ -71,6 +71,7 @@ static int agp_slot_get_pirq(PCIDevice *pci_dev, int pin)
     return (0x3210 >> (pin * 4)) & 7;
 }
 
+/* Board IRQ table used by the ABit ST6 */
 static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
 {
     int ret = 0;
