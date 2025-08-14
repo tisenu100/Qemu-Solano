@@ -290,13 +290,6 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
     qemu_printf("Intel ICH2: Setup LPC bus\n");
     isa_bus_register_input_irqs(isa_bus, d->isa_irqs_in);
 
-    qdev_prop_set_int32(DEVICE(&d->rtc), "base_year", 2000);
-    if (!qdev_realize(DEVICE(&d->rtc), BUS(isa_bus), errp)) {
-        return;
-    }
-    irq = object_property_get_uint(OBJECT(&d->rtc), "irq", &error_fatal);
-    isa_connect_gpio_out(ISA_DEVICE(&d->rtc), 0, irq);
-
     pci_bus_irqs(pci_bus, ich2_update_pirq, d, 8);
     pci_bus_set_route_irq_fn(pci_bus, ich2_route_intx_pin_to_irq);
 
@@ -327,8 +320,6 @@ static void pci_ich2_init(Object *obj)
     qdev_init_gpio_out_named(DEVICE(obj), d->isa_irqs_in, "isa-irqs", IOAPIC_NUM_PINS);
     qdev_init_gpio_out(DEVICE(obj), &d->sci_irq, 1);
     qdev_init_gpio_out_named(DEVICE(obj), &d->smi_irq, "smi-irq", 1);
-
-    object_initialize_child(obj, "rtc", &d->rtc, TYPE_MC146818_RTC);
 }
 
 static void pci_ich2_class_init(ObjectClass *klass, const void *data)
