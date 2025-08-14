@@ -112,6 +112,33 @@ static const MemoryRegionOps smi_ops = {
     },
 };
 
+static void smi_traps_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+{
+    ICH2State *d = opaque;
+
+    if(addr > 3)
+        d->smi_traps[addr] = val;
+    else
+        d->smi_traps[addr] &= ~val;
+}
+
+static uint64_t smi_traps_read(void *opaque, hwaddr addr, unsigned len)
+{
+    ICH2State *d = opaque;
+
+    return d->smi_traps[addr];
+}
+
+static const MemoryRegionOps smi_traps_ops = {
+    .read = smi_traps_read,
+    .write = smi_traps_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+};
+
 static void ich2_update_acpi(ICH2State *s)
 {
     PCIDevice *pci_dev = PCI_DEVICE(s);
@@ -308,6 +335,9 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
 
     memory_region_init_io(&d->smi_io, OBJECT(dev), &smi_ops, d, "smi-control", 8);
     memory_region_add_subregion_overlap(&d->acpi_io, 0x30, &d->smi_io, 1);
+
+    memory_region_init_io(&d->smi_traps_io, OBJECT(dev), &smi_traps_ops, d, "smi-traps", 8);
+    memory_region_add_subregion_overlap(&d->acpi_io, 0x44, &d->smi_traps_io, 1);
 
     apm_init(dev, &d->apm, apm_ctrl_changed, d);
 }

@@ -39,8 +39,10 @@ struct ICH2State {
     APMState apm;
     MemoryRegion acpi_io;
     uint8_t smi[8];
+    uint8_t smi_traps[8];
     MemoryRegion gpio_io;
     MemoryRegion smi_io;
+    MemoryRegion smi_traps_io;
     TCOIORegs tco;
     qemu_irq sci_irq;
     qemu_irq smi_irq;
