@@ -126,6 +126,7 @@ static void pc_init(MachineState *machine)
     PCIDevice *lpc_pci_dev;
     DeviceState *lpc_dev;
     ISABus *isa_bus;
+    MC146818RtcState *rtc;
     qemu_irq smi_irq;
     GSIState *gsi_state;
 
@@ -218,10 +219,11 @@ static void pc_init(MachineState *machine)
     pci_realize_and_unref(lpc_pci_dev, pcms->pcibus, &error_fatal);
 
     isa_bus = ISA_BUS(qdev_get_child_bus(lpc_dev, "isa.0"));
-    x86ms->rtc = ISA_DEVICE(object_resolve_path_component(OBJECT(lpc_pci_dev), "rtc"));
 
     i8254_pit_init(isa_bus, 0x40, 0, NULL);
     i8257_dma_init(OBJECT(lpc_dev), isa_bus, 1);
+    rtc = mc146818_rtc_init(isa_bus, 2000, NULL);
+    x86ms->rtc = ISA_DEVICE(rtc);
     smi_irq = qemu_allocate_irq(pc_acpi_smi_interrupt, first_cpu, 0);
     qdev_connect_gpio_out_named(lpc_dev, "smi-irq", 0, smi_irq);
 
