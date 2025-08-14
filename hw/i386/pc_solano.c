@@ -27,7 +27,6 @@
 #include CONFIG_DEVICES
 
 #include "qemu/units.h"
-#include "qemu/qemu-print.h"
 #include "hw/char/parallel-isa.h"
 #include "hw/dma/i8257.h"
 #include "hw/timer/i8254.h"
@@ -149,7 +148,7 @@ static void pc_init(MachineState *machine)
     ram_addr_t lowmem;
     uint64_t hole64_size = 0;
 
-    qemu_printf("PC: Setting up\n");
+    fprintf(stderr, "PC: Setting up\n");
 
     ram_memory = machine->ram;
     if (!pcms->max_ram_below_4g) {
@@ -185,7 +184,7 @@ static void pc_init(MachineState *machine)
         kvmclock_create(pcmc->kvmclock_create_always);
     }
 
-    qemu_printf("PC: Starting the PCI Host\n");
+    fprintf(stderr, "PC: Starting the PCI Host\n");
     pci_memory = g_new(MemoryRegion, 1);
     memory_region_init(pci_memory, NULL, "pci", UINT64_MAX);
     rom_memory = pci_memory;
@@ -210,7 +209,7 @@ static void pc_init(MachineState *machine)
 
     gsi_state = pc_gsi_create(&x86ms->gsi, pcmc->pci_enabled);
 
-    qemu_printf("PC: Setting up the LPC Bridge\n");
+    fprintf(stderr, "PC: Setting up the LPC Bridge\n");
     lpc_pci_dev = pci_new_multifunction(PCI_DEVFN(0x1f, 0), TYPE_ICH2_PCI_DEVICE);
     lpc_dev = DEVICE(lpc_pci_dev);
     for (int i = 0; i < IOAPIC_NUM_PINS; i++) {
@@ -233,18 +232,18 @@ static void pc_init(MachineState *machine)
 
     pc_vga_init(isa_bus, pcms->pcibus);
 
-    qemu_printf("PC: Setting up the Super I/O\n");
+    fprintf(stderr, "PC: Setting up the Super I/O\n");
     pc_basic_device_init_simple(pcms, isa_bus, x86ms->gsi);
     isa_create_simple(isa_bus, TYPE_WINBOND_W83627HF);
 
-    qemu_printf("PC: Setting up IDE\n");
+    fprintf(stderr, "PC: Setting up IDE\n");
     ide_pci_dev = pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 1), TYPE_ICH2_IDE_PCI_DEVICE);
     pci_ide_create_devs(ide_pci_dev);
     pcms->idebus[0] = qdev_get_child_bus(DEVICE(ide_pci_dev), "ide.0");
     pcms->idebus[1] = qdev_get_child_bus(DEVICE(ide_pci_dev), "ide.1");
     
 
-    qemu_printf("PC: Setting up the SMBus\n");
+    fprintf(stderr, "PC: Setting up the SMBus\n");
     smb_pci_dev = pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 3), TYPE_ICH2_SMBUS_PCI_DEVICE);
     smb_dev = DEVICE(smb_pci_dev);
 
@@ -253,7 +252,7 @@ static void pc_init(MachineState *machine)
 
     smbus_eeprom_init_one(pcms->smbus, 0x50, spd);
 
-    qemu_printf("PC: Setting up Bridges\n");
+    fprintf(stderr, "PC: Setting up Bridges\n");
     agp_bridge_dev = pci_new(PCI_DEVFN(0x01, 0), "solano-agp-bridge");
     agp_bridge = PCI_BRIDGE(agp_bridge_dev);
     pci_bridge_map_irq(agp_bridge, "pci.1", agp_slot_get_pirq);
@@ -264,11 +263,11 @@ static void pc_init(MachineState *machine)
     pci_bridge_map_irq(pci_bridge, "pci.2", pci_slots_get_pirq);
     pci_realize_and_unref(pci_bridge_dev, pcms->pcibus, &error_fatal);
 
-    qemu_printf("PC: Setting up USB\n");
+    fprintf(stderr, "PC: Setting up USB\n");
     pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 2), TYPE_ICH2_USB_UHCI1);
     pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 4), TYPE_ICH2_USB_UHCI2);
 
-    qemu_printf("PC: Setting up AC97\n");
+    fprintf(stderr, "PC: Setting up AC97\n");
     ac97 = pci_new(PCI_DEVFN(0x1f, 5), "AC97");
 
     /* Realtek ALC200 */
@@ -277,11 +276,11 @@ static void pc_init(MachineState *machine)
 
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
 
-    qemu_printf("PC: Setting up interrupts\n");
+    fprintf(stderr, "PC: Setting up interrupts\n");
     pc_i8259_create(isa_bus, gsi_state->i8259_irq);
     ioapic_init_gsi(gsi_state, phb);
 
-    qemu_printf("PC: Passing control to the BIOS\n");
+    fprintf(stderr, "PC: Passing control to the BIOS\n");
 }
 
 #define DEFINE_SOLANO_MACHINE(major, minor) \

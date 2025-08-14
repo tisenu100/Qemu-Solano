@@ -26,7 +26,6 @@
 /* NOTE: It's implementation is way too skeletal for now */
 
 #include "qemu/osdep.h"
-#include "qemu/qemu-print.h"
 #include "hw/block/fdc.h"
 #include "hw/char/serial.h"
 #include "hw/char/parallel.h"
@@ -96,7 +95,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
                     isa_fdc_set_enabled(s->fdc, 1);
                     isa_fdc_set_iobase(s->fdc, ADDR);
                     isa_fdc_set_irq(s->fdc, IRQ);
-                    qemu_printf("Winbond W83627HF: FDC set to 0x%04x with IRQ %d\n", ADDR, IRQ);
+                    fprintf(stderr, "Winbond W83627HF: FDC set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
@@ -107,7 +106,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
                     isa_parallel_set_enabled(s->lpt, 1);
                     isa_parallel_set_iobase(s->lpt, ADDR);
                     lpt_internal->irq = isa_get_irq(ISA_DEVICE(s->lpt), IRQ);
-                    qemu_printf("Winbond W83627HF: LPT set to 0x%04x with IRQ %d\n", ADDR, IRQ);
+                    fprintf(stderr, "Winbond W83627HF: LPT set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
@@ -118,7 +117,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
                     isa_serial_set_enabled(s->uart[0], 1);
                     isa_serial_set_iobase(s->uart[0], ADDR);
                     isa_serial_set_irq(s->uart[0], IRQ);
-                    qemu_printf("Winbond W83627HF: UART A set to 0x%04x with IRQ %d\n", ADDR, IRQ);
+                    fprintf(stderr, "Winbond W83627HF: UART A set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
 
@@ -129,7 +128,7 @@ static void winbond_io_write(void *opaque, hwaddr addr, uint64_t data, unsigned 
                     isa_serial_set_enabled(s->uart[1], 1);
                     isa_serial_set_iobase(s->uart[1], ADDR);
                     isa_serial_set_irq(s->uart[1], IRQ);
-                    qemu_printf("Winbond W83627HF: UART B set to 0x%04x with IRQ %d\n", ADDR, IRQ);
+                    fprintf(stderr, "Winbond W83627HF: UART B set to 0x%04x with IRQ %d\n", ADDR, IRQ);
                 }
             break;
         }
@@ -178,7 +177,7 @@ static void w83627hf_realize(DeviceState *d, Error **errp)
     ISADevice *isa = ISA_DEVICE(d);
     DriveInfo *fd[2];
 
-    qemu_printf("Winbond W83627HF: Starting\n");
+    fprintf(stderr, "Winbond W83627HF: Starting\n");
 
     s->lock = 1;
 

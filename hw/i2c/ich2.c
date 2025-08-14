@@ -26,7 +26,6 @@
 
 #include "qemu/osdep.h"
 #include "qemu/range.h"
-#include "qemu/qemu-print.h"
 #include "qapi/error.h"
 #include "hw/i2c/pm_smbus.h"
 #include "hw/southbridge/ich2.h"
@@ -41,7 +40,7 @@ static void ich2_smbus_write_config(PCIDevice *dev, uint32_t address, uint32_t v
     pci_default_write_config(dev, address, val, len);
 
     if((address == 0x20) && (pci_get_byte(dev->config + 0x04) & 1))
-        qemu_printf("Intel ICH2 SMBus: SMBus has been updated to 0x%04x\n", pci_get_word(dev->config + 0x20) & 0xfff0);
+        fprintf(stderr, "Intel ICH2 SMBus: SMBus has been updated to 0x%04x\n", pci_get_word(dev->config + 0x20) & 0xfff0);
 }
 
 static const VMStateDescription vmstate_ich2_smbus = {
@@ -58,7 +57,7 @@ static void pci_ich2_smbus_realize(PCIDevice *dev, Error **errp)
 {
     ICH2SMBState *s = ICH2_SMBUS_PCI_DEVICE(dev);
 
-    qemu_printf("Intel ICH2 SMBus: Setup SMBus\n");
+    fprintf(stderr, "Intel ICH2 SMBus: Setup SMBus\n");
     pm_smbus_init(DEVICE(dev), &s->smb, 0);
     pci_register_bar(dev, 4, 1, &s->smb.io);
 }

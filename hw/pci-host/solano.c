@@ -26,7 +26,6 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qemu/range.h"
-#include "qemu/qemu-print.h"
 #include "hw/i386/pc.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_host.h"
@@ -258,7 +257,7 @@ static void i815e_pcihost_realize(DeviceState *dev, Error **errp)
     PCIDevice *d;
     PCII815EState *f;
 
-    qemu_printf("Intel 815: Setting up the Bus\n");
+    fprintf(stderr, "Intel 815: Setting up the Bus\n");
 
     memory_region_add_subregion(s->io_memory, 0xcf8, &phb->conf_mem);
     sysbus_init_ioports(sbd, 0xcf8, 4);
@@ -277,7 +276,7 @@ static void i815e_pcihost_realize(DeviceState *dev, Error **errp)
 
     range_set_bounds(&s->pci_hole, s->below_4g_mem_size, IO_APIC_DEFAULT_ADDRESS - 1);
 
-    qemu_printf("Intel 815: Setting up Memory\n");
+    fprintf(stderr, "Intel 815: Setting up Memory\n");
     pc_pci_as_mapping_init(s->system_memory, s->pci_address_space);
 
     /* AB segment for PCI */
@@ -302,7 +301,7 @@ static void i815e_pcihost_realize(DeviceState *dev, Error **errp)
         init_pam(&f->pam_regions[i + 1], OBJECT(d), s->ram_memory, s->system_memory, s->pci_address_space, 0xc0000 + i * 0x4000, 0x4000);
     }
 
-    qemu_printf("Intel 815: Initialization complete\n");
+    fprintf(stderr, "Intel 815: Initialization complete\n");
 }
 
 static void i815e_class_init(ObjectClass *klass, const void *data)

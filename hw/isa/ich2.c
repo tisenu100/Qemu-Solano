@@ -26,7 +26,6 @@
 
 #include "qemu/osdep.h"
 #include "qemu/range.h"
-#include "qemu/qemu-print.h"
 #include "qapi/error.h"
 #include "hw/acpi/acpi.h"
 #include "hw/acpi/ich9_tco.h"
@@ -54,7 +53,7 @@ static void apm_ctrl_changed(uint32_t val, void *opaque)
     }
 
     if (s->smi[0] & 0x20) {
-        qemu_printf("Intel ICH2: An APMC SMI was provoked\n");
+        fprintf(stderr, "Intel ICH2: An APMC SMI was provoked\n");
         s->smi[4] |= 0x20;
         qemu_irq_raise(s->smi_irq);
     }
@@ -153,7 +152,7 @@ static void ich2_update_acpi(ICH2State *s)
     if(enable && (addr != 0)) {
         memory_region_set_address(&s->acpi_io, addr);
         memory_region_set_enabled(&s->acpi_io, true);
-        qemu_printf("Intel ICH2: ACPI was enabled at address 0x%04x\n", addr);
+        fprintf(stderr, "Intel ICH2: ACPI was enabled at address 0x%04x\n", addr);
     }
 
     memory_region_transaction_commit();
@@ -172,7 +171,7 @@ static void ich2_update_acpi(ICH2State *s)
         break;
     }
 
-    qemu_printf("Intel ICH2: SCI IRQ was set to %d\n", sci_num);
+    fprintf(stderr, "Intel ICH2: SCI IRQ was set to %d\n", sci_num);
     s->sci_irq = s->isa_irqs_in[sci_num];
 }
 
@@ -243,7 +242,7 @@ static void rcr_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
     ICH2State *d = opaque;
 
     if (val & 4) {
-        qemu_printf("Intel ICH2: Reset triggered by RCR\n");
+        fprintf(stderr, "Intel ICH2: Reset triggered by RCR\n");
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
         return;
     }
@@ -309,17 +308,17 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
         return;
     }
 
-    qemu_printf("Intel ICH2: Setup RCR\n");
+    fprintf(stderr, "Intel ICH2: Setup RCR\n");
     memory_region_init_io(&d->rcr_mem, OBJECT(dev), &rcr_ops, d, "reset-control", 1);
     memory_region_add_subregion_overlap(pci_address_space_io(dev), 0xcf9, &d->rcr_mem, 1);
 
-    qemu_printf("Intel ICH2: Setup LPC bus\n");
+    fprintf(stderr, "Intel ICH2: Setup LPC bus\n");
     isa_bus_register_input_irqs(isa_bus, d->isa_irqs_in);
 
     pci_bus_irqs(pci_bus, ich2_update_pirq, d, 8);
     pci_bus_set_route_irq_fn(pci_bus, ich2_route_intx_pin_to_irq);
 
-    qemu_printf("Intel ICH2: Setup ACPI\n");
+    fprintf(stderr, "Intel ICH2: Setup ACPI\n");
     memory_region_init(&d->acpi_io, OBJECT(d), "ich2-acpi", 128);
     memory_region_set_enabled(&d->acpi_io, false);
     memory_region_add_subregion(pci_address_space_io(dev), 0, &d->acpi_io);
