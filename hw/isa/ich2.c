@@ -275,7 +275,6 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
     ICH2State *d = ICH2_PCI_DEVICE(dev);
     PCIBus *pci_bus = pci_get_bus(dev);
     ISABus *isa_bus;
-    uint32_t irq;
 
     isa_bus = isa_bus_new(DEVICE(d), pci_address_space(dev), pci_address_space_io(dev), errp);
 
