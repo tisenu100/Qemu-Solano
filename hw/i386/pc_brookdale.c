@@ -233,7 +233,7 @@ static void pc_init(MachineState *machine)
     pc_vga_init(isa_bus, pcms->pcibus);
 
     qemu_printf("PC: Setting up the Super I/O\n");
-    pc_basic_device_init_simple(pcms, isa_bus, x86ms->gsi, x86ms->rtc);
+    pc_basic_device_init_simple(pcms, isa_bus, x86ms->gsi);
     isa_create_simple(isa_bus, TYPE_WINBOND_W83627HF);
 
     qemu_printf("PC: Setting up IDE\n");

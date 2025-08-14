@@ -1233,8 +1233,7 @@ void pc_basic_device_init(struct PCMachineState *pcms,
 }
 
 void pc_basic_device_init_simple(struct PCMachineState *pcms,
-                                 ISABus *isa_bus, qemu_irq *gsi,
-                                 ISADevice *rtc_state)
+                                 ISABus *isa_bus, qemu_irq *gsi)
 {
     int pit_isa_irq = 0;
     qemu_irq pit_alt_irq = NULL;
@@ -1249,10 +1248,6 @@ void pc_basic_device_init_simple(struct PCMachineState *pcms,
 
     memory_region_init_io(ioportF0_io, NULL, &ioportF0_io_ops, NULL, "ioportF0", 1);
     memory_region_add_subregion(isa_bus->address_space_io, 0xf0, ioportF0_io);
-
-    object_property_add_alias(OBJECT(pcms), "rtc-time", OBJECT(rtc_state),
-                              "date");
-
 
         if (kvm_pit_in_kernel()) {
             pit = kvm_pit_init(isa_bus, 0x40);
