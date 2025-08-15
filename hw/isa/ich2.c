@@ -280,7 +280,6 @@ static void ich2_reset(DeviceState *dev)
     pci_set_long(pci_dev->config + 0x60, 0x80808080);
     pci_set_byte(pci_dev->config + 0x54, 0x10);
     pci_set_long(pci_dev->config + 0x68, 0x80808080);
-    pci_set_long(pci_dev->config + 0xd4, 0x00000f00);
     pci_set_byte(pci_dev->config + 0xe1, 0xff);
     pci_set_long(pci_dev->config + 0xe8, 0x00112233);
     pci_set_word(pci_dev->config + 0xee, 0x5678);
