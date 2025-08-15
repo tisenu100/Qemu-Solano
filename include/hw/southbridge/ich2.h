@@ -42,6 +42,7 @@ struct ICH2State {
     uint8_t smi_traps[8];
     MemoryRegion gpio_io;
     MemoryRegion smi_io;
+    MemoryRegion smi_monitor_io;
     MemoryRegion smi_traps_io;
     TCOIORegs tco;
     qemu_irq sci_irq;
