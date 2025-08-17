@@ -936,7 +936,7 @@ static void sched_wndproc(void *opaque)
     else {
         SDL_GL_DeleteContext(s->scon->winctx);
         SDL_GL_ResetAttributes();
-        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "");
+        SDL_ResetHint(SDL_HINT_RENDER_DRIVER);
         s->scon->winctx = NULL;
         sdl_gui_restart(s->scon, s->icon);
     }
