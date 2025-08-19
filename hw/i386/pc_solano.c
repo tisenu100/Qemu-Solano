@@ -60,48 +60,50 @@
 #include "system/runstate.h"
 #include "target/i386/cpu.h"
 
+/* Hub */
 static int hub_get_pirq(PCIDevice *pci_dev, int pin)
 {
-    return (0x3210 >> (pin * 4)) & 7;
+    if(PCI_SLOT(pci_dev->devfn) == 0x1f)
+        return (0x3710 >> (pin * 4)) & 7;
+    else
+        return (0x3210 >> (pin * 4)) & 7;
 }
 
+/* Dummy. Qemu has no AGP emulation */
 static int agp_slot_get_pirq(PCIDevice *pci_dev, int pin)
 {
     return (0x3210 >> (pin * 4)) & 7;
 }
 
-/* Board IRQ table used by the ABit ST6 */
+/* Board IRQ table used by the AOpen AX3S Pro */
+/* To add a device: -device rtl8139,bus=pci.2,addr=04.0 will place an RTL8139 on Slot 1 */
 static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
 {
     int ret = 0;
 
     switch (PCI_SLOT(pci_dev->devfn)) {
-        case 0x01:
-            ret = (0x0231 >> (pin * 4)) & 7;
-        break;
-
-        case 0x02:
-            ret = (0x2301 >> (pin * 4)) & 7;
-        break;
-
-        case 0x03:
-            ret = (0x2103 >> (pin * 4)) & 7;
-        break;
-
         case 0x04:
-            ret = (0x1032 >> (pin * 4)) & 7;
+            ret = (0x5432 >> (pin * 4)) & 7;
         break;
 
         case 0x05:
-            ret = (0x0213 >> (pin * 4)) & 7;
-        break;
-
-        case 0x06:
-            ret = (0x1032 >> (pin * 4)) & 7;
+            ret = (0x6543 >> (pin * 4)) & 7;
         break;
 
         case 0x07:
-            ret = (0x2103 >> (pin * 4)) & 7;
+            ret = (0x1765 >> (pin * 4)) & 7;
+        break;
+
+        case 0x08:
+            ret = (0x7654 >> (pin * 4)) & 7;
+        break;
+
+        case 0x09:
+            ret = (0x1076 >> (pin * 4)) & 7;
+        break;
+
+        case 0x0a:
+            ret = (0x7654 >> (pin * 4)) & 7;
         break;
 
         default:
@@ -270,9 +272,13 @@ static void pc_init(MachineState *machine)
     fprintf(stderr, "PC: Setting up AC97\n");
     ac97 = pci_new(PCI_DEVFN(0x1f, 5), "AC97");
 
-    /* Realtek ALC200 */
+    /* 
+       Realtek ALC201
+       Normally an AD1885 is used however it's prone to cause audio issues.
+       ALC201 was used by some AOpen PGA370 boards so use that instead.
+    */
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-vendor", 0x414c);
-    qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4710);
+    qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4730);
 
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
 
