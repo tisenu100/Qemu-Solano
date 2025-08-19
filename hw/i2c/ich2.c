@@ -60,6 +60,8 @@ static void pci_ich2_smbus_realize(PCIDevice *dev, Error **errp)
     fprintf(stderr, "Intel ICH2 SMBus: Setup SMBus\n");
     pm_smbus_init(DEVICE(dev), &s->smb, 0);
     pci_register_bar(dev, 4, 1, &s->smb.io);
+
+    pci_config_set_interrupt_pin(dev->config, 0x02);
 }
 
 static void pci_ich2_smbus_class_init(ObjectClass *klass, const void *data)
