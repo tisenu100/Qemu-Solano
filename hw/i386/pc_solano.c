@@ -240,6 +240,8 @@ static void pc_init(MachineState *machine)
 
     fprintf(stderr, "PC: Setting up IDE\n");
     ide_pci_dev = pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 1), TYPE_ICH2_IDE_PCI_DEVICE);
+    qdev_connect_gpio_out_named(DEVICE(ide_pci_dev), "isa-irq", 0, x86ms->gsi[14]);
+    qdev_connect_gpio_out_named(DEVICE(ide_pci_dev), "isa-irq", 1, x86ms->gsi[15]);
     pci_ide_create_devs(ide_pci_dev);
     pcms->idebus[0] = qdev_get_child_bus(DEVICE(ide_pci_dev), "ide.0");
     pcms->idebus[1] = qdev_get_child_bus(DEVICE(ide_pci_dev), "ide.1");
