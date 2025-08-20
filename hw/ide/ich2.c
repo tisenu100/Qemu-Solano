@@ -29,6 +29,7 @@
 #include "qemu/qemu-print.h"
 #include "qapi/error.h"
 #include "hw/pci/pci.h"
+#include "hw/irq.h"
 #include "hw/southbridge/ich2.h"
 #include "hw/ide/pci.h"
 #include "ide-internal.h"
@@ -98,6 +99,48 @@ static void bmdma_setup_bar(PCIIDEState *d)
     }
 }
 
+static void ich2_ide_raise_irq(void *opaque, int n, int level)
+{
+    PCIIDEState *d = opaque;
+
+    qemu_set_irq(d->isa_irq[n], level);
+}
+
+static void ich2_update_drives(PCIIDEState *d)
+{
+    PCIDevice *dev = PCI_DEVICE(d);
+    uint32_t drive_stats = pci_get_long(dev->config + 0x40);
+
+    memory_region_transaction_begin();
+
+    memory_region_set_enabled(&d->data_bar[0], false);
+    memory_region_set_enabled(&d->cmd_bar[0], false);
+    memory_region_set_enabled(&d->data_bar[0], true);
+    memory_region_set_enabled(&d->cmd_bar[0], true);
+
+    if(drive_stats & 0x00008000) {
+        memory_region_set_enabled(&d->data_bar[0], true);
+        memory_region_set_enabled(&d->cmd_bar[0], true);
+    }
+
+    if(drive_stats & 0x80000000) {
+        memory_region_set_enabled(&d->data_bar[1], true);
+        memory_region_set_enabled(&d->cmd_bar[1], true);
+    }
+
+    memory_region_transaction_commit();
+}
+
+static void ich2_ide_config_write(PCIDevice *dev, uint32_t addr, uint32_t val, int len)
+{
+    PCIIDEState *d = PCI_IDE(dev);
+
+    pci_default_write_config(dev, addr, val, len);
+
+    if((addr >= 0x40) && (addr <= 0x43))
+        ich2_update_drives(d);
+}
+
 static void ich2_ide_reset(DeviceState *dev)
 {
     PCIIDEState *d = PCI_IDE(dev);
@@ -112,20 +155,30 @@ static void ich2_ide_reset(DeviceState *dev)
     pci_set_word(pci_dev->config + PCI_STATUS, PCI_STATUS_DEVSEL_MEDIUM | PCI_STATUS_FAST_BACK);
     pci_set_byte(pci_dev->config + PCI_CLASS_PROG, 0x80);
     pci_set_long(pci_dev->config + 0x20, 0x0000001);
+
+    ich2_update_drives(d);
 }
 
 static void ich2_ide_realize(PCIDevice *dev, Error **errp)
 {
     PCIIDEState *d = PCI_IDE(dev);
 
+    qdev_init_gpio_in(DEVICE(d), ich2_ide_raise_irq, 2);
+
+    memory_region_init_io(&d->data_bar[0], OBJECT(d), &pci_ide_data_le_ops, &d->bus[0], "primary-data", 8);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x1f0, &d->data_bar[0], 1);
+    memory_region_init_io(&d->cmd_bar[0], OBJECT(d), &pci_ide_cmd_le_ops, &d->bus[0], "primary-command", 4);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x3f6, &d->cmd_bar[0], 1);
     ide_bus_init(&d->bus[0], sizeof(d->bus[0]), DEVICE(d), 0, 2);
-    ide_init_ioport(&d->bus[0], NULL, 0x1f0, 0x3f6);
-    ide_bus_init_output_irq(&d->bus[0], isa_get_irq(NULL, 14));
+    ide_bus_init_output_irq(&d->bus[0], qdev_get_gpio_in(DEVICE(dev), 0));
     bmdma_init(&d->bus[0], &d->bmdma[0], d);
 
+    memory_region_init_io(&d->data_bar[1], OBJECT(d), &pci_ide_data_le_ops, &d->bus[1], "slave-data", 8);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x170, &d->data_bar[1], 1);
+    memory_region_init_io(&d->cmd_bar[1], OBJECT(d), &pci_ide_cmd_le_ops, &d->bus[1], "slave-commnad", 4);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x376, &d->cmd_bar[1], 1);
     ide_bus_init(&d->bus[1], sizeof(d->bus[1]), DEVICE(d), 1, 2);
-    ide_init_ioport(&d->bus[1], NULL, 0x170, 0x376);
-    ide_bus_init_output_irq(&d->bus[1], isa_get_irq(NULL, 15));
+    ide_bus_init_output_irq(&d->bus[1], qdev_get_gpio_in(DEVICE(dev), 1));
     bmdma_init(&d->bus[1], &d->bmdma[1], d);
 
     bmdma_setup_bar(d);
@@ -149,12 +202,14 @@ static void ich2_ide_class_init(ObjectClass *klass, const void *data)
 
     device_class_set_legacy_reset(dc, ich2_ide_reset);
     dc->vmsd = &vmstate_ide_pci;
+    k->config_write = ich2_ide_config_write;
     k->realize = ich2_ide_realize;
     k->exit = ich2_ide_exitfn;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
     k->device_id = PCI_DEVICE_ID_INTEL_ICH2_IDE;
     k->class_id = PCI_CLASS_STORAGE_IDE;
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
+    dc->user_creatable = false;
     dc->hotpluggable = false;
 }
 
