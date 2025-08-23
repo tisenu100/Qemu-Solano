@@ -34,6 +34,7 @@
 #include "hw/i386/x86.h"
 #include "hw/i386/pc.h"
 #include "hw/i386/apic.h"
+#include "hw/intc/i8259.h"
 #include "hw/isa/superio.h"
 #include "hw/pci/pci_bridge.h"
 #include "hw/pci-host/solano.h"
@@ -127,6 +128,7 @@ static void pc_init(MachineState *machine)
     PCIDevice *lpc_pci_dev;
     DeviceState *lpc_dev;
     ISABus *isa_bus;
+    qemu_irq *i8259;
     MC146818RtcState *rtc;
     qemu_irq smi_irq;
     GSIState *gsi_state;
@@ -284,7 +286,12 @@ static void pc_init(MachineState *machine)
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
 
     fprintf(stderr, "PC: Setting up interrupts\n");
-    pc_i8259_create(isa_bus, gsi_state->i8259_irq);
+    i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
+    for (int i = 0; i < ISA_NUM_IRQS; i++) {
+        gsi_state->i8259_irq[i] = i8259[i];
+    }
+    g_free(i8259);
+
     ioapic_init_gsi(gsi_state, phb);
 
     fprintf(stderr, "PC: Passing control to the BIOS\n");
