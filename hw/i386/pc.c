@@ -1249,11 +1249,7 @@ void pc_basic_device_init_simple(struct PCMachineState *pcms,
     memory_region_init_io(ioportF0_io, NULL, &ioportF0_io_ops, NULL, "ioportF0", 1);
     memory_region_add_subregion(isa_bus->address_space_io, 0xf0, ioportF0_io);
 
-        if (kvm_pit_in_kernel()) {
-            pit = kvm_pit_init(isa_bus, 0x40);
-        } else {
-            pit = i8254_pit_init(isa_bus, 0x40, pit_isa_irq, pit_alt_irq);
-        }
+    pit = i8254_pit_init(isa_bus, 0x40, pit_isa_irq, pit_alt_irq);
 
     object_property_set_link(OBJECT(pcms->pcspk), "pit",
                              OBJECT(pit), &error_fatal);
