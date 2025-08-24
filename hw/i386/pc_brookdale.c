@@ -61,46 +61,42 @@
 #include "system/runstate.h"
 #include "target/i386/cpu.h"
 
+/* Hub */
 static int hub_get_pirq(PCIDevice *pci_dev, int pin)
 {
-    return (0x3210 >> (pin * 4)) & 7;
+    if(PCI_SLOT(pci_dev->devfn) == 0x1f)
+        return (0x3710 >> (pin * 4)) & 7;
+    else
+        return (0x3210 >> (pin * 4)) & 7;
 }
 
+/* Dummy. Qemu has no AGP emulation */
 static int agp_slot_get_pirq(PCIDevice *pci_dev, int pin)
 {
     return (0x3210 >> (pin * 4)) & 7;
 }
 
+/* Board IRQ table used by the DFI NB33-BL */
+/* To add a device: -device rtl8139,bus=pci.2,addr=04.0 will place an RTL8139 on Slot 1 */
+/* -netdev flag is mandatory as the board has onboard networking */
 static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
 {
     int ret = 0;
 
     switch (PCI_SLOT(pci_dev->devfn)) {
-        case 0x01:
-            ret = (0x0231 >> (pin * 4)) & 7;
-        break;
-
-        case 0x02:
-            ret = (0x2301 >> (pin * 4)) & 7;
-        break;
-
-        case 0x03:
-            ret = (0x2103 >> (pin * 4)) & 7;
-        break;
-
         case 0x04:
-            ret = (0x1032 >> (pin * 4)) & 7;
+            ret = (0x3210 >> (pin * 4)) & 7;
         break;
 
-        case 0x05:
-            ret = (0x0213 >> (pin * 4)) & 7;
+        case 0x08: /* Occupied by the internal network controller */
+            ret = (0x7654 >> (pin * 4)) & 7;
         break;
 
-        case 0x06:
-            ret = (0x1032 >> (pin * 4)) & 7;
+        case 0x09:
+            ret = (0x0321 >> (pin * 4)) & 7;
         break;
 
-        case 0x07:
+        case 0x0b:
             ret = (0x2103 >> (pin * 4)) & 7;
         break;
 
@@ -142,6 +138,8 @@ static void pc_init(MachineState *machine)
     DeviceState *smb_dev;
 
     PCIDevice *ac97;
+
+    PCIDevice *rtl;
 
     MemoryRegion *ram_memory;
     MemoryRegion *pci_memory = NULL;
@@ -272,11 +270,19 @@ static void pc_init(MachineState *machine)
     fprintf(stderr, "PC: Setting up AC97\n");
     ac97 = pci_new(PCI_DEVFN(0x1f, 5), "AC97");
 
-    /* Realtek ALC200 */
+    /* Realtek ALC201A */
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-vendor", 0x414c);
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4710);
 
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
+
+    fprintf(stderr, "PC: Setting up internal networking\n");
+    rtl = pci_new(PCI_DEVFN(0x08, 0x00), "rtl8139"); /* Speculated to be on that slot */
+    qdev_prop_set_string(DEVICE(rtl), "netdev", "net0");
+    qdev_prop_set_string(DEVICE(rtl), "romfile", "");
+    pci_realize_and_unref(rtl, pci_bridge_get_sec_bus(pci_bridge), &error_fatal);
+
+    pci_set_byte(PCI_DEVICE(rtl)->config + 0x08, 0x10);
 
     fprintf(stderr, "PC: Setting up interrupts\n");
     i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
@@ -316,7 +322,7 @@ static void pc_brookdale_machine_options(MachineClass *m)
     m->auto_enable_numa_with_memdev = false;
     m->has_hotpluggable_cpus = true;
     m->default_boot_order = "";
-    m->max_cpus = 1;
+    m->max_cpus = 2; /* 1 CPU + 1 Thread -smp cores=1,threads=1 */
     m->default_cpu_type = X86_CPU_TYPE_NAME("willamette");
     m->nvdimm_supported = false;
     m->smp_props.dies_supported = false;
