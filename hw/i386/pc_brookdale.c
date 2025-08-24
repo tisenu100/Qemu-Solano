@@ -250,7 +250,7 @@ static void pc_init(MachineState *machine)
     smb_dev = DEVICE(smb_pci_dev);
 
     pcms->smbus = I2C_BUS(qdev_get_child_bus(smb_dev, "i2c"));
-    uint8_t *spd = spd_data_generate(SDR, machine->ram_size);
+    uint8_t *spd = spd_data_generate(DDR, machine->ram_size);
 
     smbus_eeprom_init_one(pcms->smbus, 0x50, spd);
 
