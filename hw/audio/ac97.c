@@ -507,14 +507,6 @@ static void mixer_reset(AC97LinkState *s)
  * Native audio mixer
  * I/O Reads
  */
-static uint32_t nam_readb(void *opaque, uint32_t addr)
-{
-    AC97LinkState *s = opaque;
-    dolog("U nam readb 0x%x\n", addr);
-    s->cas = 0;
-    return ~0U;
-}
-
 static uint32_t nam_readw(void *opaque, uint32_t addr)
 {
     AC97LinkState *s = opaque;
@@ -522,25 +514,22 @@ static uint32_t nam_readw(void *opaque, uint32_t addr)
     return mixer_load(s, addr);
 }
 
+static uint32_t nam_readb(void *opaque, uint32_t addr)
+{
+    AC97LinkState *s = opaque;
+    return nam_readw(s, addr) & 0xff;
+}
+
 static uint32_t nam_readl(void *opaque, uint32_t addr)
 {
     AC97LinkState *s = opaque;
-    dolog("U nam readl 0x%x\n", addr);
-    s->cas = 0;
-    return ~0U;
+    return nam_readw(s, addr + 2) | nam_readw(s, addr);
 }
 
 /**
  * Native audio mixer
  * I/O Writes
  */
-static void nam_writeb(void *opaque, uint32_t addr, uint32_t val)
-{
-    AC97LinkState *s = opaque;
-    dolog("U nam writeb 0x%x <- 0x%x\n", addr, val);
-    s->cas = 0;
-}
-
 static void nam_writew(void *opaque, uint32_t addr, uint32_t val)
 {
     AC97LinkState *s = opaque;
@@ -638,11 +627,17 @@ static void nam_writew(void *opaque, uint32_t addr, uint32_t val)
     }
 }
 
-static void nam_writel(void *opaque, uint32_t addr, uint32_t val)
+static void nam_writeb(void *opaque, uint32_t addr, uint32_t val)
 {
     AC97LinkState *s = opaque;
-    dolog("U nam writel 0x%x <- 0x%x\n", addr, val);
-    s->cas = 0;
+    nam_writew(s, addr, val & 0xff);
+}
+
+static void nam_writel(void *opaque, uint32_t addr, uint32_t val)
+{
+    AC97LinkState *s = opaque;;
+    nam_writew(s, addr, val & 0xffff);
+    nam_writew(s, addr + 2, val >> 16);
 }
 
 /**
@@ -1217,7 +1212,7 @@ static const MemoryRegionOps ac97_io_nam_ops = {
 
 static uint64_t nabm_read(void *opaque, hwaddr addr, unsigned size)
 {
-    if ((addr / size) > 64) {
+    if ((addr / size) > 512) {
         return -1;
     }
 
@@ -1236,7 +1231,7 @@ static uint64_t nabm_read(void *opaque, hwaddr addr, unsigned size)
 static void nabm_write(void *opaque, hwaddr addr, uint64_t val,
                        unsigned size)
 {
-    if ((addr / size) > 64) {
+    if ((addr / size) > 512) {
         return;
     }
 
