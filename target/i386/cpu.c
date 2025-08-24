@@ -3557,15 +3557,15 @@ static const X86CPUDefinition builtin_x86_defs[] = {
     },
     {
         .name = "willamette",
-        .level = 3,
+        .level = 2,
         .vendor = CPUID_VENDOR_INTEL,
         .family = 15,
         .model = 1,
         .stepping = 2,
         .features[FEAT_1_EDX] =
-            PENTIUM3_FEATURES | CPUID_SSE2,
+            PENTIUM3_FEATURES | CPUID_CLFLUSH | CPUID_DTS | CPUID_ACPI | CPUID_SSE2 | CPUID_SS | CPUID_HT | CPUID_TM,
         .xlevel = 0x80000004,
-        .model_id = "Intel(R) Pentium(R) 4 CPU 1.50GHz",
+        .model_id = "Intel(R) Pentium(R) 4 CPU 1.80GHz",
         .cache_info = &legacy_intel_cpuid2_cache_info,
     },
     {
