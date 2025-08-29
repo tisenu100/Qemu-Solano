@@ -76,7 +76,7 @@ static int agp_slot_get_pirq(PCIDevice *pci_dev, int pin)
     return (0x3210 >> (pin * 4)) & 7;
 }
 
-/* Board IRQ table used by the DFI NB33-BL */
+/* Board IRQ table used by the AOpen AX4B-G2 */
 /* To add a device: -device rtl8139,bus=pci.2,addr=04.0 will place an RTL8139 on Slot 1 */
 /* -netdev flag is mandatory as the board has onboard networking */
 static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
@@ -84,20 +84,32 @@ static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
     int ret = 0;
 
     switch (PCI_SLOT(pci_dev->devfn)) {
-        case 0x04:
-            ret = (0x3210 >> (pin * 4)) & 7;
+        case 0x04: /* Slot 1 */
+            ret = (0x5432 >> (pin * 4)) & 7;
+        break;
+
+        case 0x05: /* Slot 2 */
+            ret = (0x6543 >> (pin * 4)) & 7;
+        break;
+
+        case 0x0a: /* Slot 3 */
+            ret = (0x7654 >> (pin * 4)) & 7;
+        break;
+
+        case 0x07: /* Slot 4 */
+            ret = (0x1765 >> (pin * 4)) & 7;
+        break;
+
+        case 0x09: /* Slot 5 */
+            ret = (0x1076 >> (pin * 4)) & 7;
+        break;
+
+        case 0x0b: /* CNR Slot. Preferably avoid */
+            ret = (0x2107 >> (pin * 4)) & 7;
         break;
 
         case 0x08: /* Occupied by the internal network controller */
             ret = (0x7654 >> (pin * 4)) & 7;
-        break;
-
-        case 0x09:
-            ret = (0x0321 >> (pin * 4)) & 7;
-        break;
-
-        case 0x0b:
-            ret = (0x2103 >> (pin * 4)) & 7;
         break;
 
         default:
@@ -138,8 +150,6 @@ static void pc_init(MachineState *machine)
     DeviceState *smb_dev;
 
     PCIDevice *ac97;
-
-    PCIDevice *rtl;
 
     MemoryRegion *ram_memory;
     MemoryRegion *pci_memory = NULL;
@@ -275,14 +285,6 @@ static void pc_init(MachineState *machine)
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4710);
 
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
-
-    fprintf(stderr, "PC: Setting up internal networking\n");
-    rtl = pci_new(PCI_DEVFN(0x08, 0x00), "rtl8139"); /* Speculated to be on that slot */
-    qdev_prop_set_string(DEVICE(rtl), "netdev", "net0");
-    qdev_prop_set_string(DEVICE(rtl), "romfile", "");
-    pci_realize_and_unref(rtl, pci_bridge_get_sec_bus(pci_bridge), &error_fatal);
-
-    pci_set_byte(PCI_DEVICE(rtl)->config + 0x08, 0x10);
 
     fprintf(stderr, "PC: Setting up interrupts\n");
     i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
