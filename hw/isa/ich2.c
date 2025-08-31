@@ -59,7 +59,7 @@ static void apm_ctrl_changed(uint32_t val, void *opaque)
     }
 }
 
-static void gpio_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+static void gpe_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
 {
     ACPIREGS *ar = opaque;
     ICH2State *d = container_of(ar, ICH2State, ar);
@@ -68,15 +68,15 @@ static void gpio_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
     acpi_update_sci(ar, d->smi_irq); /* The BIOS want to generate a wake event via this */
 }
 
-static uint64_t gpio_read(void *opaque, hwaddr addr, unsigned len)
+static uint64_t gpe_read(void *opaque, hwaddr addr, unsigned len)
 {
     ACPIREGS *ar = opaque;
     return acpi_gpe_ioport_readb(ar, addr);
 }
 
-static const MemoryRegionOps gpio_ops = {
-    .read = gpio_read,
-    .write = gpio_write,
+static const MemoryRegionOps gpe_ops = {
+    .read = gpe_read,
+    .write = gpe_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
     .impl = {
         .min_access_size = 1,
@@ -195,6 +195,56 @@ static void ich2_update_acpi(ICH2State *s)
     s->sci_irq = s->isa_irqs_in[sci_num];
 }
 
+static void gpio_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+{
+    ICH2State *d = opaque;
+
+    if((addr > 0x03) && (addr < 0x07)) /* Fixed GPIO's */
+        return;
+
+    if(addr < 0x30)
+        d->gpio[addr] = val;
+}
+
+static uint64_t gpio_read(void *opaque, hwaddr addr, unsigned len)
+{
+    ICH2State *d = opaque;
+
+    if(addr < 0x30)
+        return d->gpio[addr];
+    else
+        return 0;
+}
+
+static const MemoryRegionOps gpio_ops = {
+    .read = gpio_read,
+    .write = gpio_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+};
+
+static void ich2_update_gpio(ICH2State *s)
+{
+    PCIDevice *pci_dev = PCI_DEVICE(s);
+    uint16_t addr = pci_get_word(pci_dev->config + 0x58) & 0xffc0;
+    bool enable = !!(pci_get_byte(pci_dev->config + 0x5c) & 0x10);
+
+    memory_region_transaction_begin();
+
+    memory_region_set_enabled(&s->gpio_io, false);
+
+    if(enable && (addr != 0)) {
+        memory_region_set_address(&s->gpio_io, addr);
+        memory_region_set_enabled(&s->gpio_io, true);
+        fprintf(stderr, "Intel ICH2: GPIO was enabled at address 0x%04x\n", addr);
+    }
+
+    memory_region_transaction_commit();
+}
+
 static int ich2_get_pirq(PCIDevice *pci_dev, int pirq)
 {
     uint8_t val = 0;
@@ -248,6 +298,11 @@ static void ich2_write_config(PCIDevice *dev, uint32_t address, uint32_t val, in
         case 0x40: case 0x41: case 0x42: case 0x43:
         case 0x44:
             ich2_update_acpi(s);
+        break;
+
+        case 0x58: case 0x59: case 0x5a: case 0x5b:
+        case 0x5c:
+            ich2_update_gpio(s);
         break;
 
         case 0x60: case 0x61: case 0x62: case 0x63:
@@ -305,7 +360,18 @@ static void ich2_reset(DeviceState *dev)
     pci_set_word(pci_dev->config + 0xee, 0x5678);
     pci_set_byte(pci_dev->config + 0xf2, 0x0f);
 
+    d->gpio[0x00] = 0x80;
+    d->gpio[0x01] = 0x31;
+    d->gpio[0x03] = 0x1a;
+    d->gpio[0x04] = 0xff;
+    d->gpio[0x05] = 0xff;
+    d->gpio[0x0e] = 0x3f;
+    d->gpio[0x0f] = 0x1b;
+    d->gpio[0x16] = 0x63;
+    d->gpio[0x17] = 0x06;
+
     ich2_update_acpi(d);
+    ich2_update_gpio(d);
     acpi_pm1_evt_reset(&d->ar);
     acpi_pm1_cnt_reset(&d->ar);
     acpi_pm_tmr_reset(&d->ar);
@@ -348,8 +414,8 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
     acpi_gpe_init(&d->ar, 8);
     acpi_pm_tco_init(&d->tco, &d->acpi_io);
 
-    memory_region_init_io(&d->gpio_io, OBJECT(dev), &gpio_ops, &d->ar, "gpio", 8);
-    memory_region_add_subregion_overlap(&d->acpi_io, 0x28, &d->gpio_io, 1);
+    memory_region_init_io(&d->gpe_io, OBJECT(dev), &gpe_ops, &d->ar, "gpe", 8);
+    memory_region_add_subregion_overlap(&d->acpi_io, 0x28, &d->gpe_io, 1);
 
     memory_region_init_io(&d->smi_io, OBJECT(dev), &smi_ops, d, "smi-control", 8);
     memory_region_add_subregion_overlap(&d->acpi_io, 0x30, &d->smi_io, 1);
@@ -361,6 +427,12 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
     memory_region_add_subregion_overlap(&d->acpi_io, 0x44, &d->smi_traps_io, 1);
 
     apm_init(dev, &d->apm, apm_ctrl_changed, d);
+
+    fprintf(stderr, "Intel ICH2: Setup GPIO\n");
+    d->gpio[0x1a] = 0x04; /* Won't clear with PCIRST# */
+    memory_region_init_io(&d->gpio_io, OBJECT(dev), &gpio_ops, d, "ich2-gpio", 64);
+    memory_region_set_enabled(&d->gpio_io, false);
+    memory_region_add_subregion(pci_address_space_io(dev), 0, &d->gpio_io);
 }
 
 static void pci_ich2_init(Object *obj)
