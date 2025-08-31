@@ -109,29 +109,30 @@ static void ich2_ide_raise_irq(void *opaque, int n, int level)
 static void ich2_update_drives(PCIIDEState *d)
 {
     PCIDevice *dev = PCI_DEVICE(d);
+    bool enabled = pci_get_byte(dev->config + PCI_COMMAND) & 0x01;
     uint32_t drive_stats = pci_get_long(dev->config + 0x40);
 
-    if (d->bus[0].portio_list.owner && !(drive_stats & 0x00008000)) {
+    if (d->bus[0].portio_list.owner && !(drive_stats & 0x00008000) && !enabled) {
         portio_list_del(&d->bus[0].portio_list);
         portio_list_destroy(&d->bus[0].portio_list);
     }
 
-    if (d->bus[0].portio2_list.owner && !(drive_stats & 0x00008000)) {
+    if (d->bus[0].portio2_list.owner && !(drive_stats & 0x00008000) && !enabled) {
         portio_list_del(&d->bus[0].portio2_list);
         portio_list_destroy(&d->bus[0].portio2_list);
     }
 
-    if (d->bus[1].portio_list.owner && !(drive_stats & 0x80000000)) {
+    if (d->bus[1].portio_list.owner && !(drive_stats & 0x80000000) && !enabled) {
         portio_list_del(&d->bus[1].portio_list);
         portio_list_destroy(&d->bus[1].portio_list);
     }
 
-    if (d->bus[1].portio2_list.owner && !(drive_stats & 0x80000000)) {
+    if (d->bus[1].portio2_list.owner && !(drive_stats & 0x80000000) && !enabled) {
         portio_list_del(&d->bus[1].portio2_list);
         portio_list_destroy(&d->bus[1].portio2_list);
     }
 
-    if(drive_stats & 0x00008000) {
+    if((drive_stats & 0x00008000) && enabled) {
         if (!d->bus[0].portio_list.owner) {
             portio_list_init(&d->bus[0].portio_list, OBJECT(d), ide_portio_list, &d->bus[0], "ide");
             portio_list_add(&d->bus[0].portio_list, pci_address_space_io(dev), 0x1f0);
@@ -143,7 +144,7 @@ static void ich2_update_drives(PCIIDEState *d)
         }
     }
 
-    if(drive_stats & 0x80000000) {
+    if((drive_stats & 0x80000000) && enabled) {
         if (!d->bus[1].portio_list.owner) {
             portio_list_init(&d->bus[1].portio_list, OBJECT(d), ide_portio_list, &d->bus[1], "ide");
             portio_list_add(&d->bus[1].portio_list, pci_address_space_io(dev), 0x170);
@@ -162,7 +163,7 @@ static void ich2_ide_config_write(PCIDevice *dev, uint32_t addr, uint32_t val, i
 
     pci_default_write_config(dev, addr, val, len);
 
-    if((addr >= 0x40) && (addr <= 0x43))
+    if(((addr >= 0x40) && (addr <= 0x43)) || (addr == 0x04))
         ich2_update_drives(d);
 }
 
@@ -180,8 +181,6 @@ static void ich2_ide_reset(DeviceState *dev)
     pci_set_word(pci_dev->config + PCI_STATUS, PCI_STATUS_DEVSEL_MEDIUM | PCI_STATUS_FAST_BACK);
     pci_set_byte(pci_dev->config + PCI_CLASS_PROG, 0x80);
     pci_set_long(pci_dev->config + 0x20, 0x0000001);
-
-    ich2_update_drives(d);
 }
 
 static void ich2_ide_realize(PCIDevice *dev, Error **errp)
