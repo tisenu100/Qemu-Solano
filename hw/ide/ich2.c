@@ -112,6 +112,13 @@ static void ich2_update_drives(PCIIDEState *d)
     bool enabled = pci_get_byte(dev->config + PCI_COMMAND) & 0x01;
     uint32_t drive_stats = pci_get_long(dev->config + 0x40);
 
+    if(enabled) {
+        fprintf(stderr, "Intel ICH2 IDE: Drive update P:%s S:%s\n", \
+                (drive_stats & 0x00008000) ? "ON" : "OFF",          \
+                (drive_stats & 0x80000000) ? "ON" : "OFF"           \
+               );
+    }
+
     if (d->bus[0].portio_list.owner && !(drive_stats & 0x00008000) && !enabled) {
         portio_list_del(&d->bus[0].portio_list);
         portio_list_destroy(&d->bus[0].portio_list);
