@@ -55,13 +55,6 @@ struct I845State {
     char *pci_type;
 };
 
-static void i845_realize(PCIDevice *dev, Error **errp)
-{
-    if (object_property_get_bool(qdev_get_machine(), "iommu", NULL)) {
-        warn_report("i845E doesn't support emulated iommu");
-    }
-}
-
 static void i845_update_pam(int segment, PCII845State *d)
 {
     PCIDevice *pci_dev = PCI_DEVICE(d);
@@ -308,7 +301,6 @@ static void i845_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
-    k->realize = i845_realize;
     k->config_write = i845_write_config;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
     k->device_id = PCI_DEVICE_ID_INTEL_I845;

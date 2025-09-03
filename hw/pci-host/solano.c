@@ -55,13 +55,6 @@ struct I815EState {
     char *pci_type;
 };
 
-static void i815e_realize(PCIDevice *dev, Error **errp)
-{
-    if (object_property_get_bool(qdev_get_machine(), "iommu", NULL)) {
-        warn_report("i815E doesn't support emulated iommu");
-    }
-}
-
 static void i815e_update_pam(int segment, PCII815EState *d)
 {
     PCIDevice *pci_dev = PCI_DEVICE(d);
@@ -309,7 +302,6 @@ static void i815e_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
-    k->realize = i815e_realize;
     k->config_write = i815e_write_config;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
     k->device_id = PCI_DEVICE_ID_INTEL_I815E;
