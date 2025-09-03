@@ -187,7 +187,7 @@ static void ich2_ide_reset(DeviceState *dev)
     pci_set_word(pci_dev->config + PCI_COMMAND, 0x0000);
     pci_set_word(pci_dev->config + PCI_STATUS, PCI_STATUS_DEVSEL_MEDIUM | PCI_STATUS_FAST_BACK);
     pci_set_byte(pci_dev->config + PCI_CLASS_PROG, 0x80);
-    pci_set_long(pci_dev->config + 0x20, 0x0000001);
+    pci_set_long(pci_dev->config + 0x20, 0x00000001);
 }
 
 static void ich2_ide_realize(PCIDevice *dev, Error **errp)
