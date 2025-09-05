@@ -335,9 +335,9 @@ static void pc_brookdale_machine_options(MachineClass *m)
     m->smp_props.cache_supported[CACHE_LEVEL_AND_TYPE_L3] = false;
 }
 
-static void pc_brookdale_machine_10_1_options(MachineClass *m)
+static void pc_brookdale_machine_10_2_options(MachineClass *m)
 {
     pc_brookdale_machine_options(m);
 }
 
-DEFINE_BROOKDALE_MACHINE_AS_LATEST(10, 1);
+DEFINE_BROOKDALE_MACHINE_AS_LATEST(10, 2);
