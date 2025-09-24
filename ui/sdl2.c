@@ -1230,7 +1230,7 @@ static void sdl2_display_init(DisplayState *ds, DisplayOptions *o)
     assert(o->type == DISPLAY_TYPE_SDL);
 
 #ifdef __linux__
-    if (!g_getenv("SDL_VIDEODRIVER"))
+    if (!display_opengl && !g_getenv("SDL_VIDEODRIVER"))
         SDL_SetHint(SDL_HINT_VIDEODRIVER, "x11");
 #endif
     if (SDL_GetHintBoolean("QEMU_ENABLE_SDL_LOGGING", SDL_FALSE)) {
