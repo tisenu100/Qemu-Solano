@@ -10,13 +10,15 @@ test_x86_64_timeouts = {
 }
 
 tests_x86_64_system_quick = [
+  'bad_vmstate',
   'cpu_model_versions',
   'cpu_queries',
   'mem_addr_space',
+  'memlock',
   'migration',
   'pc_cpu_hotplug_props',
   'virtio_version',
-  'memlock',
+  'vmstate',
 ]
 
 tests_x86_64_system_thorough = [
@@ -31,6 +33,7 @@ tests_x86_64_system_thorough = [
   'replay',
   'reverse_debug',
   'tuxrun',
+  'vfio_user_client',
   'virtio_balloon',
   'virtio_gpu',
 ]
