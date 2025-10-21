@@ -78,7 +78,6 @@ static int agp_slot_get_pirq(PCIDevice *pci_dev, int pin)
 
 /* Board IRQ table used by the AOpen AX4B-G2 */
 /* To add a device: -device rtl8139,bus=pci.2,addr=04.0 will place an RTL8139 on Slot 1 */
-/* -netdev flag is mandatory as the board has onboard networking */
 static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
 {
     int ret = 0;
