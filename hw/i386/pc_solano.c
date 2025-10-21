@@ -156,22 +156,24 @@ static void pc_init(MachineState *machine)
 
     ram_memory = machine->ram;
     if (!pcms->max_ram_below_4g) {
-        pcms->max_ram_below_4g = 0xe0000000;
+        pcms->max_ram_below_4g = 4 * GiB;
     }
-    lowmem = pcms->max_ram_below_4g;
-    if (machine->ram_size >= pcms->max_ram_below_4g) {
-        if (pcmc->gigabyte_align) {
-            if (lowmem > 0xc0000000) {
-                lowmem = 0xc0000000;
-            }
-            if (lowmem & (1 * GiB - 1)) {
-                warn_report("Large machine and max_ram_below_4g "
-                            "(%" PRIu64 ") not a multiple of 1G; "
-                            "possible bad performance.",
-                            pcms->max_ram_below_4g);
-            }
-        }
+
+    /* The Intel 815EP can do maximum 512MB */
+    if((machine->ram_size < 32 * MiB) || (machine->ram_size > 512 * MiB)) {
+        error_printf("FATAL! Assigning memory %s\n", (machine->ram_size > 512 * MiB) ? "beyond 512MB" : "below 32MB");
+        exit(EXIT_FAILURE);
     }
+
+    /*
+        Top of Memory
+
+        As per Intel 815EP datasheet:
+        The Top of memory is limited to 512 MB. All accesses to addresses within this range will be
+        forwarded to the DRAM unless a hole in this range is created.
+    
+    */
+    lowmem = 512 * MiB;
 
     if (machine->ram_size >= lowmem) {
         x86ms->above_4g_mem_size = machine->ram_size - lowmem;
