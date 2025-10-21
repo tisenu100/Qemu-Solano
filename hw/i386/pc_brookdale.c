@@ -160,29 +160,30 @@ static void pc_init(MachineState *machine)
 
     ram_memory = machine->ram;
     if (!pcms->max_ram_below_4g) {
-        pcms->max_ram_below_4g = 0xe0000000;
-    }
-    lowmem = pcms->max_ram_below_4g;
-    if (machine->ram_size >= pcms->max_ram_below_4g) {
-        if (pcmc->gigabyte_align) {
-            if (lowmem > 0xc0000000) {
-                lowmem = 0xc0000000;
-            }
-            if (lowmem & (1 * GiB - 1)) {
-                warn_report("Large machine and max_ram_below_4g "
-                            "(%" PRIu64 ") not a multiple of 1G; "
-                            "possible bad performance.",
-                            pcms->max_ram_below_4g);
-            }
-        }
+        pcms->max_ram_below_4g = 4 * GiB;
     }
 
+    /*
+        Top of Memory
+
+        On the Intel 845 it is configured according to the TOM register (C4h)
+        400h = 4000_0000
+
+        The AOpen board gives this result
+        pci_cfg_write i845 00:00.0 @0xc4 <- 0x2000
+        
+        2000h = 2_0000_0000
+
+        TOM output may be different for each board
+    */
+    lowmem = 0x200000000;
+
     if (machine->ram_size >= lowmem) {
-        x86ms->above_4g_mem_size = machine->ram_size - lowmem;
-        x86ms->below_4g_mem_size = lowmem;
+        x86ms->above_4g_mem_size = machine->ram_size - lowmem; /* TSEG - TOM */
+        x86ms->below_4g_mem_size = lowmem; /* TSEG - TOM */
     } else {
-        x86ms->above_4g_mem_size = 0;
-        x86ms->below_4g_mem_size = machine->ram_size;
+        x86ms->above_4g_mem_size = 0; /* no TSEG */
+        x86ms->below_4g_mem_size = machine->ram_size; /* TSEG - TOM */
     }
 
     pc_machine_init_sgx_epc(pcms);
