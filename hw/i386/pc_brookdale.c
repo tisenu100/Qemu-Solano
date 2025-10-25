@@ -163,7 +163,7 @@ static void pc_init(MachineState *machine)
         pcms->max_ram_below_4g = 4 * GiB;
     }
 
-    /* The Intel 815EP can do maximum 512MB */
+    /* The Intel 845 can do maximum 3GB */
     if((machine->ram_size < 32 * MiB) || (machine->ram_size > 3 * GiB)) {
         error_printf("FATAL! Assigning memory %s\n", (machine->ram_size > 3 * GiB) ? "beyond 3GB" : "below 32MB");
         exit(EXIT_FAILURE);

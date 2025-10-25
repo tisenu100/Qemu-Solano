@@ -35,6 +35,80 @@
 #include "ide-internal.h"
 #include "trace.h"
 
+static uint64_t ich2_ide_data_pci_read(void *opaque, hwaddr addr, unsigned len)
+{
+    uint64_t ret;
+
+    switch(len)
+    {
+        default:
+            ret = ide_ioport_read(opaque, (uint32_t)addr);
+        break;
+
+        case 2:
+            if(addr > 1)
+                fprintf(stderr, "Intel ICH2 IDE: Illegal IDE Data access\n");
+
+            ret = ide_data_readw(opaque, (uint32_t)addr);
+        break;
+
+        case 4:
+            if(addr > 1)
+                fprintf(stderr, "Intel ICH2 IDE: Illegal IDE Data access\n");
+
+            ret = ide_data_readl(opaque, (uint32_t)addr);
+        break;
+    }
+
+    return ret;
+}
+
+static void ich2_ide_data_pci_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+{
+    switch(len)
+    {
+        default:
+            ide_ioport_write(opaque, (uint32_t)addr, (uint32_t)val);
+        break;
+
+        case 2:
+            if(addr > 1)
+                fprintf(stderr, "Intel ICH2 IDE: Illegal IDE Data access\n");
+
+            ide_data_writew(opaque, (uint32_t)addr, (uint32_t)val);
+        break;
+
+        case 4:
+            if(addr > 1)
+                fprintf(stderr, "Intel ICH2 IDE: Illegal IDE Data access\n");
+
+            ide_data_writel(opaque, (uint32_t)addr, (uint32_t)val);
+        break;
+    }
+}
+
+static const MemoryRegionOps ich2_ide_data_pci_ops = {
+    .read = ich2_ide_data_pci_read,
+    .write = ich2_ide_data_pci_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+static uint64_t ich2_ide_cmd_pci_read(void *opaque, hwaddr addr, unsigned len)
+{
+    return ide_status_read(opaque, (uint32_t)addr);
+}
+
+static void ich2_ide_cmd_pci_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+{
+    ide_ctrl_write(opaque, (uint32_t)addr, (uint32_t)val);
+}
+
+static const MemoryRegionOps ich2_ide_cmd_pci_ops = {
+    .read = ich2_ide_cmd_pci_read,
+    .write = ich2_ide_cmd_pci_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
 static uint64_t bmdma_read(void *opaque, hwaddr addr, unsigned size)
 {
     BMDMAState *bm = opaque;
@@ -119,49 +193,25 @@ static void ich2_update_drives(PCIIDEState *d)
                );
     }
 
-    if (d->bus[0].portio_list.owner && !(drive_stats & 0x00008000) && !enabled) {
-        portio_list_del(&d->bus[0].portio_list);
-        portio_list_destroy(&d->bus[0].portio_list);
+    memory_region_transaction_begin();
+
+    memory_region_set_enabled(&d->data_bar[0], false);
+    memory_region_set_enabled(&d->cmd_bar[0], false);
+    memory_region_set_enabled(&d->data_bar[1], false);
+    memory_region_set_enabled(&d->cmd_bar[1], false);
+
+    if(drive_stats & 0x00008000) {
+        memory_region_set_enabled(&d->data_bar[0], true);
+        memory_region_set_enabled(&d->cmd_bar[0], true);
     }
 
-    if (d->bus[0].portio2_list.owner && !(drive_stats & 0x00008000) && !enabled) {
-        portio_list_del(&d->bus[0].portio2_list);
-        portio_list_destroy(&d->bus[0].portio2_list);
+
+    if(drive_stats & 0x80000000) {
+        memory_region_set_enabled(&d->data_bar[1], true);
+        memory_region_set_enabled(&d->cmd_bar[1], true);
     }
 
-    if (d->bus[1].portio_list.owner && !(drive_stats & 0x80000000) && !enabled) {
-        portio_list_del(&d->bus[1].portio_list);
-        portio_list_destroy(&d->bus[1].portio_list);
-    }
-
-    if (d->bus[1].portio2_list.owner && !(drive_stats & 0x80000000) && !enabled) {
-        portio_list_del(&d->bus[1].portio2_list);
-        portio_list_destroy(&d->bus[1].portio2_list);
-    }
-
-    if((drive_stats & 0x00008000) && enabled) {
-        if (!d->bus[0].portio_list.owner) {
-            portio_list_init(&d->bus[0].portio_list, OBJECT(d), ide_portio_list, &d->bus[0], "ide");
-            portio_list_add(&d->bus[0].portio_list, pci_address_space_io(dev), 0x1f0);
-        }
-
-        if (!d->bus[0].portio2_list.owner) {
-            portio_list_init(&d->bus[0].portio2_list, OBJECT(d), ide_portio2_list, &d->bus[0], "ide");
-            portio_list_add(&d->bus[0].portio2_list, pci_address_space_io(dev), 0x3f6);
-        }
-    }
-
-    if((drive_stats & 0x80000000) && enabled) {
-        if (!d->bus[1].portio_list.owner) {
-            portio_list_init(&d->bus[1].portio_list, OBJECT(d), ide_portio_list, &d->bus[1], "ide");
-            portio_list_add(&d->bus[1].portio_list, pci_address_space_io(dev), 0x170);
-        }
-
-        if (!d->bus[1].portio2_list.owner) {
-            portio_list_init(&d->bus[1].portio2_list, OBJECT(d), ide_portio2_list, &d->bus[1], "ide");
-            portio_list_add(&d->bus[1].portio2_list, pci_address_space_io(dev), 0x376);
-        }
-    }
+    memory_region_transaction_commit();
 }
 
 static void ich2_ide_config_write(PCIDevice *dev, uint32_t addr, uint32_t val, int len)
@@ -197,10 +247,18 @@ static void ich2_ide_realize(PCIDevice *dev, Error **errp)
     qdev_init_gpio_in(DEVICE(d), ich2_ide_raise_irq, 2);
 
     ide_bus_init(&d->bus[0], sizeof(d->bus[0]), DEVICE(d), 0, 2);
+    memory_region_init_io(&d->data_bar[0], OBJECT(d), &ich2_ide_data_pci_ops, &d->bus[0], "ich2-ide0-data", 8);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x1f0, &d->data_bar[0], 1);
+    memory_region_init_io(&d->cmd_bar[0], OBJECT(d), &ich2_ide_cmd_pci_ops, &d->bus[0], "ich2-ide0-cmd", 1);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x3f6, &d->cmd_bar[0], 1);
     ide_bus_init_output_irq(&d->bus[0], qdev_get_gpio_in(DEVICE(dev), 0));
     bmdma_init(&d->bus[0], &d->bmdma[0], d);
 
     ide_bus_init(&d->bus[1], sizeof(d->bus[1]), DEVICE(d), 1, 2);
+    memory_region_init_io(&d->data_bar[1], OBJECT(d), &ich2_ide_data_pci_ops, &d->bus[1], "ich2-ide1-data", 8);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x170, &d->data_bar[1], 1);
+    memory_region_init_io(&d->cmd_bar[1], OBJECT(d), &ich2_ide_cmd_pci_ops, &d->bus[1], "ich2-ide1-cmd", 1);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x376, &d->cmd_bar[1], 1);
     ide_bus_init_output_irq(&d->bus[1], qdev_get_gpio_in(DEVICE(dev), 1));
     bmdma_init(&d->bus[1], &d->bmdma[1], d);
 
