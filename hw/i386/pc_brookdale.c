@@ -27,6 +27,7 @@
 #include CONFIG_DEVICES
 
 #include "qemu/units.h"
+#include "hw/block/sst_lpc.h"
 #include "hw/char/parallel-isa.h"
 #include "hw/dma/i8257.h"
 #include "hw/timer/i8254.h"
@@ -150,9 +151,11 @@ static void pc_init(MachineState *machine)
 
     PCIDevice *ac97;
 
+    DeviceState *sst_flash;
+    SSTState *sst;
+
     MemoryRegion *ram_memory;
     MemoryRegion *pci_memory = NULL;
-    MemoryRegion *rom_memory = system_memory;
     ram_addr_t lowmem;
     uint64_t hole64_size = 0;
 
@@ -202,7 +205,6 @@ static void pc_init(MachineState *machine)
     fprintf(stderr, "PC: Starting the PCI Host\n");
     pci_memory = g_new(MemoryRegion, 1);
     memory_region_init(pci_memory, NULL, "pci", UINT64_MAX);
-    rom_memory = pci_memory;
 
     phb = OBJECT(qdev_new(TYPE_I845_PCI_HOST_BRIDGE));
     object_property_add_child(OBJECT(machine), "i845", phb);
@@ -220,7 +222,7 @@ static void pc_init(MachineState *machine)
 
     hole64_size = object_property_get_uint(phb, PCI_HOST_PROP_PCI_HOLE64_SIZE, &error_abort);
 
-    pc_memory_init(pcms, system_memory, rom_memory, hole64_size);
+    pc_memory_init(pcms, system_memory, pci_memory, hole64_size);
 
     gsi_state = pc_gsi_create(&x86ms->gsi, pcmc->pci_enabled);
 
@@ -291,6 +293,12 @@ static void pc_init(MachineState *machine)
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4710);
 
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
+
+    fprintf(stderr, "PC: Setting up Flash\n");
+    sst_flash = qdev_new(TYPE_SST_LPC);
+    sst = SST_LPC(sst_flash);
+    sst_mount_flash(sst, pcms->flash[0]);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(sst_flash), &error_fatal);
 
     fprintf(stderr, "PC: Setting up interrupts\n");
     i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());

@@ -104,6 +104,7 @@ config SOLANO
     select IDE_ICH2
     select ICH2_SMBUS
     select W83627HF
+    select SST_LPC
 
 config ISAPC
     bool
