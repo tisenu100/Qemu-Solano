@@ -200,10 +200,7 @@ static void sst_realize(DeviceState *d, Error **errp)
 
     /* Initiate the SST Flash and "steal" Qemu's block */
     memory_region_init_rom_device(&s->mem, OBJECT(d), &sst_ops, s, "SST", blk_getlength(blk), &error_fatal);
-    s->buf = memory_region_get_ram_ptr(&s->mem);
     sysbus_init_mmio(SYS_BUS_DEVICE(d), &s->mem);
-
-    blk_check_size_and_read_all(blk, d, s->buf, blk_getlength(blk), errp);
 
     fprintf(stderr, "SST: Assigned a BIOS flash image of %d KB\n", (int)(blk_getlength(blk) / 1024));
     sst_read(s, 0, 0); /* Return the Chip variant on console */
