@@ -28,7 +28,6 @@
 
 #include "qemu/units.h"
 #include "hw/block/sst_lpc.h"
-#include "hw/char/parallel-isa.h"
 #include "hw/dma/i8257.h"
 #include "hw/timer/i8254.h"
 #include "hw/loader.h"
@@ -41,11 +40,9 @@
 #include "hw/pci-host/solano.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/southbridge/ich2.h"
-#include "hw/display/ramfb.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/usb.h"
-#include "net/net.h"
 #include "hw/ide/pci.h"
 #include "hw/irq.h"
 #include "system/kvm.h"
@@ -152,7 +149,6 @@ static void pc_init(MachineState *machine)
 
     MemoryRegion *ram_memory;
     MemoryRegion *pci_memory = NULL;
-    MemoryRegion *rom_memory = system_memory;
     ram_addr_t lowmem;
     uint64_t hole64_size = 0;
 
@@ -197,7 +193,6 @@ static void pc_init(MachineState *machine)
     fprintf(stderr, "PC: Starting the PCI Host\n");
     pci_memory = g_new(MemoryRegion, 1);
     memory_region_init(pci_memory, NULL, "pci", UINT64_MAX);
-    rom_memory = pci_memory;
 
     phb = OBJECT(qdev_new(TYPE_I815E_PCI_HOST_BRIDGE));
     object_property_add_child(OBJECT(machine), "i815e", phb);
@@ -215,7 +210,7 @@ static void pc_init(MachineState *machine)
 
     hole64_size = object_property_get_uint(phb, PCI_HOST_PROP_PCI_HOLE64_SIZE, &error_abort);
 
-    pc_memory_init(pcms, system_memory, rom_memory, hole64_size);
+    pc_memory_init(pcms, system_memory, pci_memory, hole64_size);
 
     gsi_state = pc_gsi_create(&x86ms->gsi, pcmc->pci_enabled);
 
