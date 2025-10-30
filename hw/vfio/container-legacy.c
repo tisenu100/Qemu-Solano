@@ -25,7 +25,7 @@
 #include "hw/vfio/vfio-device.h"
 #include "system/address-spaces.h"
 #include "system/memory.h"
-#include "system/ram_addr.h"
+#include "system/physmem.h"
 #include "qemu/error-report.h"
 #include "qemu/range.h"
 #include "system/reset.h"
@@ -69,7 +69,7 @@ static int vfio_ram_block_discard_disable(VFIOLegacyContainer *container,
 }
 
 static int vfio_dma_unmap_bitmap(const VFIOLegacyContainer *container,
-                                 hwaddr iova, ram_addr_t size,
+                                 hwaddr iova, uint64_t size,
                                  IOMMUTLBEntry *iotlb)
 {
     const VFIOContainer *bcontainer = VFIO_IOMMU(container);
@@ -92,7 +92,7 @@ static int vfio_dma_unmap_bitmap(const VFIOLegacyContainer *container,
     bitmap = (struct vfio_bitmap *)&unmap->data;
 
     /*
-     * cpu_physical_memory_set_dirty_lebitmap() supports pages in bitmap of
+     * physical_memory_set_dirty_lebitmap() supports pages in bitmap of
      * qemu_real_host_page_size to mark those dirty. Hence set bitmap_pgsize
      * to qemu_real_host_page_size.
      */
@@ -108,7 +108,7 @@ static int vfio_dma_unmap_bitmap(const VFIOLegacyContainer *container,
 
     ret = ioctl(container->fd, VFIO_IOMMU_UNMAP_DMA, unmap);
     if (!ret) {
-        cpu_physical_memory_set_dirty_lebitmap(vbmap.bitmap,
+        physical_memory_set_dirty_lebitmap(vbmap.bitmap,
                 iotlb->translated_addr, vbmap.pages);
     } else {
         error_report("VFIO_UNMAP_DMA with DIRTY_BITMAP : %m");
@@ -121,14 +121,14 @@ unmap_exit:
     return ret;
 }
 
-static int vfio_legacy_dma_unmap_one(const VFIOContainer *bcontainer,
-                                     hwaddr iova, ram_addr_t size,
-                                     IOMMUTLBEntry *iotlb)
+static int vfio_legacy_dma_unmap_one(const VFIOLegacyContainer *container,
+                                     hwaddr iova, uint64_t size,
+                                     uint32_t flags, IOMMUTLBEntry *iotlb)
 {
-    const VFIOLegacyContainer *container = VFIO_IOMMU_LEGACY(bcontainer);
+    const VFIOContainer *bcontainer = VFIO_IOMMU(container);
     struct vfio_iommu_type1_dma_unmap unmap = {
         .argsz = sizeof(unmap),
-        .flags = 0,
+        .flags = flags,
         .iova = iova,
         .size = size,
     };
@@ -147,25 +147,7 @@ static int vfio_legacy_dma_unmap_one(const VFIOContainer *bcontainer,
         need_dirty_sync = true;
     }
 
-    while (ioctl(container->fd, VFIO_IOMMU_UNMAP_DMA, &unmap)) {
-        /*
-         * The type1 backend has an off-by-one bug in the kernel (71a7d3d78e3c
-         * v4.15) where an overflow in its wrap-around check prevents us from
-         * unmapping the last page of the address space.  Test for the error
-         * condition and re-try the unmap excluding the last page.  The
-         * expectation is that we've never mapped the last page anyway and this
-         * unmap request comes via vIOMMU support which also makes it unlikely
-         * that this page is used.  This bug was introduced well after type1 v2
-         * support was introduced, so we shouldn't need to test for v1.  A fix
-         * is queued for kernel v5.0 so this workaround can be removed once
-         * affected kernels are sufficiently deprecated.
-         */
-        if (errno == EINVAL && unmap.size && !(unmap.iova + unmap.size) &&
-            container->iommu_type == VFIO_TYPE1v2_IOMMU) {
-            trace_vfio_legacy_dma_unmap_overflow_workaround();
-            unmap.size -= 1ULL << ctz64(bcontainer->pgsizes);
-            continue;
-        }
+    if (ioctl(container->fd, VFIO_IOMMU_UNMAP_DMA, &unmap)) {
         return -errno;
     }
 
@@ -185,32 +167,35 @@ static int vfio_legacy_dma_unmap_one(const VFIOContainer *bcontainer,
  * DMA - Mapping and unmapping for the "type1" IOMMU interface used on x86
  */
 static int vfio_legacy_dma_unmap(const VFIOContainer *bcontainer,
-                                 hwaddr iova, ram_addr_t size,
+                                 hwaddr iova, uint64_t size,
                                  IOMMUTLBEntry *iotlb, bool unmap_all)
 {
+    const VFIOLegacyContainer *container = VFIO_IOMMU_LEGACY(bcontainer);
+    uint32_t flags = 0;
     int ret;
 
     if (unmap_all) {
-        /* The unmap ioctl doesn't accept a full 64-bit span. */
-        Int128 llsize = int128_rshift(int128_2_64(), 1);
+        if (container->unmap_all_supported) {
+            flags = VFIO_DMA_UNMAP_FLAG_ALL;
+        } else {
+            /* The unmap ioctl doesn't accept a full 64-bit span. */
+            Int128 llsize = int128_rshift(int128_2_64(), 1);
+            size = int128_get64(llsize);
 
-        ret = vfio_legacy_dma_unmap_one(bcontainer, 0, int128_get64(llsize),
-                                        iotlb);
+            ret = vfio_legacy_dma_unmap_one(container, 0, size, flags, iotlb);
+            if (ret) {
+                return ret;
+            }
 
-        if (ret == 0) {
-            ret = vfio_legacy_dma_unmap_one(bcontainer, int128_get64(llsize),
-                                            int128_get64(llsize), iotlb);
+            iova = size;
         }
-
-    } else {
-        ret = vfio_legacy_dma_unmap_one(bcontainer, iova, size, iotlb);
     }
 
-    return ret;
+    return vfio_legacy_dma_unmap_one(container, iova, size, flags, iotlb);
 }
 
 static int vfio_legacy_dma_map(const VFIOContainer *bcontainer, hwaddr iova,
-                               ram_addr_t size, void *vaddr, bool readonly,
+                               uint64_t size, void *vaddr, bool readonly,
                                MemoryRegion *mr)
 {
     const VFIOLegacyContainer *container = VFIO_IOMMU_LEGACY(bcontainer);
@@ -284,7 +269,7 @@ static int vfio_legacy_query_dirty_bitmap(const VFIOContainer *bcontainer,
     range->size = size;
 
     /*
-     * cpu_physical_memory_set_dirty_lebitmap() supports pages in bitmap of
+     * physical_memory_set_dirty_lebitmap() supports pages in bitmap of
      * qemu_real_host_page_size to mark those dirty. Hence set bitmap's pgsize
      * to qemu_real_host_page_size.
      */
@@ -503,7 +488,7 @@ static void vfio_get_iommu_info_migration(VFIOLegacyContainer *container,
                             header);
 
     /*
-     * cpu_physical_memory_set_dirty_lebitmap() supports pages in bitmap of
+     * physical_memory_set_dirty_lebitmap() supports pages in bitmap of
      * qemu_real_host_page_size to mark those dirty.
      */
     if (cap_mig->pgsize_bitmap & qemu_real_host_page_size()) {
@@ -536,6 +521,9 @@ static bool vfio_legacy_setup(VFIOContainer *bcontainer, Error **errp)
     }
 
     vfio_get_info_iova_range(info, bcontainer);
+
+    ret = ioctl(container->fd, VFIO_CHECK_EXTENSION, VFIO_UNMAP_ALL);
+    container->unmap_all_supported = !!ret;
 
     vfio_get_iommu_info_migration(container, info);
     return true;
@@ -990,7 +978,8 @@ static bool vfio_legacy_attach_device(const char *name, VFIODevice *vbasedev,
         error_setg(&vbasedev->cpr.mdev_blocker,
                    "CPR does not support vfio mdev %s", vbasedev->name);
         if (migrate_add_blocker_modes(&vbasedev->cpr.mdev_blocker, errp,
-                                      MIG_MODE_CPR_TRANSFER, -1) < 0) {
+                                      MIG_MODE_CPR_TRANSFER, MIG_MODE_CPR_EXEC,
+                                      -1) < 0) {
             goto hiod_unref_exit;
         }
     }

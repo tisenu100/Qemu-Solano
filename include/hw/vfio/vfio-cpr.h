@@ -21,7 +21,7 @@ struct VFIOIOMMUFDContainer;
 struct IOMMUFDBackend;
 
 typedef int (*dma_map_fn)(const struct VFIOContainer *bcontainer,
-                          hwaddr iova, ram_addr_t size, void *vaddr,
+                          hwaddr iova, uint64_t size, void *vaddr,
                           bool readonly, MemoryRegion *mr);
 
 typedef struct VFIOContainerCPR {
@@ -68,7 +68,7 @@ bool vfio_cpr_container_match(struct VFIOLegacyContainer *container,
 void vfio_cpr_giommu_remap(struct VFIOContainer *bcontainer,
                            MemoryRegionSection *section);
 
-bool vfio_cpr_ram_discard_register_listener(
+bool vfio_cpr_ram_discard_replay_populated(
     struct VFIOContainer *bcontainer, MemoryRegionSection *section);
 
 void vfio_cpr_save_vector_fd(struct VFIOPCIDevice *vdev, const char *name,

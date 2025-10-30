@@ -12,6 +12,7 @@ _libpl011_bindings_inc_rs = rust.bindgen(
   include_directories: bindings_incdir,
   bindgen_version: ['>=0.60.0'],
   args: bindgen_args_common,
+  c_args: bindgen_c_args,
 )
 
 _libpl011_rs = static_library(
@@ -32,6 +33,7 @@ _libpl011_rs = static_library(
     bilge_impl_rs,
     bits_rs,
     common_rs,
+    glib_sys_rs,
     util_rs,
     migration_rs,
     bql_rs,
@@ -39,6 +41,7 @@ _libpl011_rs = static_library(
     chardev_rs,
     system_rs,
     hwcore_rs,
+    trace_rs
   ],
 )
 

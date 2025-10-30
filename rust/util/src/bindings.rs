@@ -18,6 +18,8 @@
     clippy::too_many_arguments
 )]
 
+use glib_sys::{guint, GPollFD, GString};
+
 #[cfg(MESON)]
 include!("bindings.inc.rs");
 

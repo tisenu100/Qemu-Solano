@@ -295,8 +295,6 @@ elif cpu == 'ppc'
   kvm_targets = ['ppc-softmmu']
 elif cpu == 'ppc64'
   kvm_targets = ['ppc-softmmu', 'ppc64-softmmu']
-elif cpu == 'mips'
-  kvm_targets = ['mips-softmmu', 'mipsel-softmmu']
 elif cpu == 'mips64'
   kvm_targets = ['mips-softmmu', 'mipsel-softmmu', 'mips64-softmmu', 'mips64el-softmmu']
 elif cpu == 'riscv32'
@@ -334,6 +332,7 @@ elif cpu == 'x86_64'
     'CONFIG_HVF': ['x86_64-softmmu'],
     'CONFIG_NVMM': ['i386-softmmu', 'x86_64-softmmu'],
     'CONFIG_WHPX': ['i386-softmmu', 'x86_64-softmmu'],
+    'CONFIG_MSHV': ['x86_64-softmmu'],
   }
 endif
 
@@ -681,6 +680,9 @@ if get_option('cfi')
     error('-fsanitize-cfi-icall-generalize-pointers is not supported by the compiler')
   endif
   if get_option('cfi_debug')
+    if get_option('safe_stack')
+      error('cfi_debug is not compatible with safe_stack')
+    endif
     if cc.compiles('int main () { return 0; }',
                    name: '-fno-sanitize-trap=cfi-icall',
                    args: ['-flto', '-fsanitize=cfi-icall',
@@ -880,6 +882,14 @@ accelerators = []
 if get_option('kvm').allowed() and host_os == 'linux'
   accelerators += 'CONFIG_KVM'
 endif
+
+if get_option('mshv').allowed() and host_os == 'linux'
+  if get_option('mshv').enabled() and host_machine.cpu() != 'x86_64'
+    error('mshv accelerator requires x64_64 host')
+  endif
+  accelerators += 'CONFIG_MSHV'
+endif
+
 if get_option('whpx').allowed() and host_os == 'windows'
   if get_option('whpx').enabled() and host_machine.cpu() != 'x86_64'
     error('WHPX requires 64-bit host')
@@ -948,6 +958,9 @@ if 'CONFIG_NVMM' not in accelerators and get_option('nvmm').enabled()
 endif
 if 'CONFIG_WHPX' not in accelerators and get_option('whpx').enabled()
   error('WHPX not available on this platform')
+endif
+if 'CONFIG_MSHV' not in accelerators and get_option('mshv').enabled()
+  error('mshv not available on this platform')
 endif
 
 xen = not_found
@@ -1350,7 +1363,13 @@ if get_option('spice') \
 endif
 spice_headers = spice.partial_dependency(compile_args: true, includes: true)
 
-rt = cc.find_library('rt', required: false)
+rt = not_found
+if host_os != 'windows'
+  have_shm_open = cc.has_function('shm_open')
+  if not have_shm_open
+    rt = cc.find_library('rt', required: true)
+  endif
+endif
 
 libiscsi = not_found
 if not get_option('libiscsi').auto() or have_block
@@ -3647,6 +3666,7 @@ if have_system
   trace_events_subdirs += [
     'accel/hvf',
     'accel/kvm',
+    'accel/mshv',
     'audio',
     'backends',
     'backends/tpm',
@@ -3812,14 +3832,10 @@ util_ss = util_ss.apply({})
 libqemuutil = static_library('qemuutil',
                              build_by_default: false,
                              sources: util_ss.sources() + stub_ss.sources() + genh,
-                             dependencies: [util_ss.dependencies(), libm, threads, glib, socket, malloc])
-qemuutil_deps = [event_loop_base]
-if host_os != 'windows'
-  qemuutil_deps += [rt]
-endif
+                             dependencies: [util_ss.dependencies(), libm, threads, glib, socket, malloc, rt])
 qemuutil = declare_dependency(link_with: libqemuutil,
                               sources: genh + version_res,
-                              dependencies: qemuutil_deps)
+                              dependencies: [event_loop_base])
 
 if have_system or have_user
   decodetree = generator(find_program('scripts/decodetree.py'),
@@ -4233,8 +4249,9 @@ if have_rust
     '--no-layout-tests',
     '--no-prepend-enum-name',
     '--allowlist-file', meson.project_source_root() + '/include/.*',
-    '--allowlist-file', meson.project_source_root() + '/.*',
-    '--allowlist-file', meson.project_build_root() + '/.*'
+    '--allowlist-file', meson.project_build_root() + '/.*',
+    '--blocklist-file', glib_pc.get_variable('includedir') + '/glib-2.0/.*',
+    '--blocklist-type', '.*_([a-z]*autoptr)$',
     ]
   if not rustfmt.found()
     if bindgen.version().version_compare('<0.65.0')
@@ -4251,6 +4268,10 @@ if have_rust
     bindgen_args_common += ['--size_t-is-usize']
   else
     bindgen_args_common += ['--merge-extern-blocks']
+  endif
+  bindgen_c_args = []
+  if host_arch == 'wasm32'
+    bindgen_c_args += ['-fvisibility=default']
   endif
   subdir('rust')
 endif
@@ -4818,6 +4839,7 @@ if have_system
   summary_info += {'HVF support':       config_all_accel.has_key('CONFIG_HVF')}
   summary_info += {'WHPX support':      config_all_accel.has_key('CONFIG_WHPX')}
   summary_info += {'NVMM support':      config_all_accel.has_key('CONFIG_NVMM')}
+  summary_info += {'MSHV support':      config_all_accel.has_key('CONFIG_MSHV')}
   summary_info += {'Xen support':       xen.found()}
   if xen.found()
     summary_info += {'xen ctrl version':  xen.version()}
@@ -5036,6 +5058,14 @@ elif host_long_bits < 64
   message()
   message('Support for 32-bit CPU host architecture ' + cpu + ' is going')
   message('to be dropped in a future QEMU release.')
+elif host_arch == 'mips'
+  message()
+  warning('DEPRECATED HOST CPU')
+  message()
+  message('Support for CPU host architecture ' + cpu + ' is going to be')
+  message('dropped as soon as the QEMU project stops supporting Debian 12')
+  message('("Bookworm"). Going forward, the QEMU project will not guarantee')
+  message('that QEMU will compile or work on this host CPU.')
 endif
 
 if not supported_oses.contains(host_os)

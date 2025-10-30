@@ -2727,13 +2727,31 @@ void address_space_init(AddressSpace *as, MemoryRegion *root, const char *name);
 /**
  * address_space_destroy: destroy an address space
  *
- * Releases all resources associated with an address space.  After an address space
- * is destroyed, its root memory region (given by address_space_init()) may be destroyed
- * as well.
+ * Releases all resources associated with an address space.  After an
+ * address space is destroyed, the reference the AddressSpace had to
+ * its root memory region is dropped, which may result in the
+ * destruction of that memory region as well.
+ *
+ * Note that destruction of the AddressSpace is done via RCU;
+ * it is therefore not valid to free the memory the AddressSpace
+ * struct is in until after that RCU callback has completed.
+ * If you want to g_free() the AddressSpace after destruction you
+ * can do that with address_space_destroy_free().
  *
  * @as: address space to be destroyed
  */
 void address_space_destroy(AddressSpace *as);
+
+/**
+ * address_space_destroy_free: destroy an address space and free it
+ *
+ * This does the same thing as address_space_destroy(), and then also
+ * frees (via g_free()) the AddressSpace itself once the destruction
+ * is complete.
+ *
+ * @as: address space to be destroyed
+ */
+void address_space_destroy_free(AddressSpace *as);
 
 /**
  * address_space_remove_listeners: unregister all listeners of an address space
@@ -2977,6 +2995,8 @@ void address_space_cache_invalidate(MemoryRegionCache *cache,
  */
 void address_space_cache_destroy(MemoryRegionCache *cache);
 
+void address_space_flush_icache_range(AddressSpace *as, hwaddr addr, hwaddr len);
+
 /* address_space_get_iotlb_entry: translate an address into an IOTLB
  * entry. Should be called from an RCU critical section.
  */
@@ -3028,6 +3048,15 @@ static inline MemoryRegion *address_space_translate(AddressSpace *as,
  */
 bool address_space_access_valid(AddressSpace *as, hwaddr addr, hwaddr len,
                                 bool is_write, MemTxAttrs attrs);
+
+/**
+ * address_space_is_io: check whether an guest physical addresses
+ *                      whithin an address space is I/O memory.
+ *
+ * @as: #AddressSpace to be accessed
+ * @addr: address within that address space
+ */
+bool address_space_is_io(AddressSpace *as, hwaddr addr);
 
 /* address_space_map: map a physical memory region into a host virtual address
  *

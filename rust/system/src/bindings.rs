@@ -19,6 +19,10 @@
 )]
 
 use common::Zeroable;
+use glib_sys::{
+    guint, GArray, GByteArray, GHashTable, GHashTableIter, GList, GPollFD, GPtrArray, GSList,
+    GString,
+};
 
 #[cfg(MESON)]
 include!("bindings.inc.rs");

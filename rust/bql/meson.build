@@ -21,6 +21,7 @@ _bql_bindings_inc_rs = rust.bindgen(
   include_directories: bindings_incdir,
   bindgen_version: ['>=0.60.0'],
   args: bindgen_args_common,
+  c_args: bindgen_c_args,
 )
 
 _bql_rs = static_library(
@@ -36,7 +37,7 @@ _bql_rs = static_library(
   override_options: ['rust_std=2021', 'build.rust_std=2021'],
   rust_abi: 'rust',
   rust_args: _bql_cfg,
-  link_with: [_migration_rs],
+  dependencies: [glib_sys_rs],
 )
 
 bql_rs = declare_dependency(link_with: [_bql_rs],

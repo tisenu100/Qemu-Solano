@@ -306,7 +306,7 @@ static ram_addr_t alloc_initrd_memory(struct loongarch_boot_info *info,
 static int64_t load_kernel_info(struct loongarch_boot_info *info)
 {
     uint64_t kernel_entry, kernel_low, kernel_high, initrd_offset = 0;
-    ssize_t kernel_size, initrd_size;
+    ssize_t kernel_size;
 
     kernel_size = load_elf(info->kernel_filename, NULL,
                            cpu_loongarch_virt_to_phys, NULL,
@@ -328,16 +328,16 @@ static int64_t load_kernel_info(struct loongarch_boot_info *info)
     }
 
     if (info->initrd_filename) {
-        initrd_size = get_image_size(info->initrd_filename);
+        ssize_t initrd_size = get_image_size(info->initrd_filename, NULL);
         if (initrd_size > 0) {
             initrd_offset = ROUND_UP(kernel_high + 4 * kernel_size, 64 * KiB);
             initrd_offset = alloc_initrd_memory(info, initrd_offset,
                                                 initrd_size);
             initrd_size = load_image_targphys(info->initrd_filename,
-                                              initrd_offset, initrd_size);
+                                              initrd_offset, initrd_size, NULL);
         }
 
-        if (initrd_size == (target_ulong)-1) {
+        if (initrd_size == -1) {
             error_report("could not load initial ram disk '%s'",
                          info->initrd_filename);
             exit(1);
