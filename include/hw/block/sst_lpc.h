@@ -52,10 +52,11 @@ struct SSTState {
     /*< public >*/
 
     int stage;
+    int sw_id;
     
     PFlashCFI01 *pfl;
     MemoryRegion mem;
-    void *buf;
+    uint8_t *buf;
 };
 
 void sst_mount_flash(SSTState *sst, PFlashCFI01 *pfl);

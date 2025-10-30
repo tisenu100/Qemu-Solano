@@ -43,6 +43,8 @@
 #include "system/runstate.h"
 #include "system/block-backend-io.h"
 
+#define ADDR_MASKED (addr & 0xffff)
+
 void sst_mount_flash(SSTState *sst, PFlashCFI01 *pfl)
 {
     sst->pfl = pfl;
@@ -51,80 +53,95 @@ void sst_mount_flash(SSTState *sst, PFlashCFI01 *pfl)
         fprintf(stderr, "SST: Qemu flash was mounted\n");
 }
 
+static void flush_buffer(SSTState *s, BlockBackend *blk) {
+    blk_pwrite(blk, 0, blk_getlength(blk), s->buf, 0);
+
+    /* Update buffer a second time. */
+    s->buf = memory_region_get_ram_ptr(&s->mem);
+    blk_check_size_and_read_all(blk, DEVICE(s), s->buf, blk_getlength(blk), &error_fatal);
+}
+
 static void sst_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
 {
     SSTState *s = opaque;
     BlockBackend *blk = pflash_cfi01_get_blk(s->pfl);
 
-    fprintf(stderr, "Writing\n");
-
     switch(s->stage) {
         case 0: /* Very Standard Procedure(Unless it is about exiting Software ID) */
-            if((addr == 0x5555) && (val == 0xaa))
+            if((ADDR_MASKED == 0x5555) && (val == 0xaa))
                 s->stage++;
             else if((val == 0xf0))
                 memory_region_rom_device_set_romd(&s->mem, true);
         break;
 
         case 1:  /* Very Standard Procedure */
-            if((addr == 0x2aaa) && (val == 0x55))
+            if((ADDR_MASKED == 0x2aaa) && (val == 0x55))
                 s->stage++;
             else
                 goto invalid;
         break;
 
         case 2:
-            if((addr == 0x5555) && (val == 0xa0)) /* Write */
+            if((ADDR_MASKED == 0x5555) && (val == 0xa0)) /* Write */
                 s->stage = 3;
-            else if((addr == 0x5555) && (val == 0x80)) /* Erase */
+            else if((ADDR_MASKED == 0x5555) && (val == 0x80)) /* Erase */
                 s->stage = 4;
-            else if((addr == 0x5555) && (val == 0x90)) { /* Software ID Entry*/
+            else if((ADDR_MASKED == 0x5555) && (val == 0x90)) { /* Software ID Entry*/
                 s->stage = 0;
+                s->sw_id = 0;
                 memory_region_rom_device_set_romd(&s->mem, false);
             }
-            else if((val == 0xf0))
+            else if((val == 0xf0)) {
+                s->stage = 0;
+                s->sw_id = 0;
                 memory_region_rom_device_set_romd(&s->mem, true);
+            }
             else
                 goto invalid;
         break;
 
         case 3: /* Byte Write */
-            if(blk)
-                blk_pwrite(blk, addr & 0x001fffff, 1, (uint8_t *)(val & 0xff), 0);
-
+            s->buf[addr & 0x1fffff] = val;
             s->stage = 0;
         break;
 
         case 4: /* Erase Confirmation */
-            if((addr == 0x5555) && (val == 0xaa))
+            if(ADDR_MASKED && (val == 0xaa))
                 s->stage++;
             else
                 goto invalid;
         break;
 
         case 5: /* Erase Confirmation */
-            if((addr == 0x2aaa) && (val == 0x55))
+            if(ADDR_MASKED && (val == 0x55))
                 s->stage++;
             else
                 goto invalid;
         break;
 
         case 6: /* Erase */
-            if(blk) {
-                switch(val & 0xff) {
-                    case 0x30: /* 4KB Sector Erase */
-                        blk_pwrite(blk, addr & 0x001fffff, 4 * KiB, 0, 0);
-                    break;
+            switch(val & 0xff) {
+                case 0x30: /* 4KB Sector Erase */
+                    for(int i = 0; i < (4 * KiB); i++)
+                        if(i < blk_getlength(blk))
+                            s->buf[i + (addr & 0x1fffff)] = 0xff;
+                        else
+                            break;
+                break;
 
-                    case 0x50: /* 64KB Block Erase */
-                        blk_pwrite(blk, addr & 0x001fffff, 64 * KiB, 0, 0);
-                    break;
+                case 0x50: /* 64KB Block Erase */
+                    for(int i = 0; i < (64 * KiB); i++)
+                        if(i < blk_getlength(blk))
+                            s->buf[i + (addr & 0x1fffff)] = 0xff;
+                        else
+                            break;
+                break;
 
-                    case 0x10: /* Chip Erase */
-                        fprintf(stderr, "SST: A Chip erase sequence was triggered\n");
-                        blk_pwrite(blk, addr & 0x001fffff, blk_getlength(blk), 0, 0);
-                    break;
-                }
+                case 0x10: /* Chip Erase */
+                    fprintf(stderr, "SST: A Chip erase sequence was triggered");
+                    for(int i = 0; i < blk_getlength(blk); i++)
+                        s->buf[i] = 0xff;
+                break;
             }
 
             s->stage = 0;
@@ -145,7 +162,12 @@ static uint64_t sst_read(void *opaque, hwaddr addr, unsigned len)
     BlockBackend *blk = pflash_cfi01_get_blk(s->pfl);
     int size = blk_getlength(blk);
 
-    memory_region_rom_device_set_romd(&s->mem, true);
+    if(!s->sw_id) { /* Return the software vendor first */
+        s->sw_id++;
+        return 0xbf;
+    }
+
+    s->sw_id--;
 
     switch(size) {
         default:
@@ -205,6 +227,11 @@ static void sst_realize(DeviceState *d, Error **errp)
     fprintf(stderr, "SST: Assigned a BIOS flash image of %d KB\n", (int)(blk_getlength(blk) / 1024));
     sst_read(s, 0, 0); /* Return the Chip variant on console */
 
+    /* Get all updated changes */
+    s->buf = memory_region_get_ram_ptr(&s->mem);
+
+    blk_check_size_and_read_all(blk, d, s->buf, blk_getlength(blk), &error_fatal);
+
     sysbus_mmio_map(SYS_BUS_DEVICE(d), 0, 0x100000000 - blk_getlength(blk));
 }
 
@@ -216,12 +243,12 @@ static void sst_reset(DeviceState *d)
         return;
 
     BlockBackend *blk = pflash_cfi01_get_blk(s->pfl);
-    s->stage = 0;
-    s->buf = memory_region_get_ram_ptr(&s->mem);
 
-    /* Get all updated changes */
-    if(blk)
-        blk_check_size_and_read_all(blk, d, s->buf, blk_getlength(blk), &error_fatal);
+    s->stage = 0;
+    s->sw_id = 0;
+
+    /* Update flash contents with what was written throughout the buffer */
+    flush_buffer(s, blk);
 }
 
 static void sst_class_init(ObjectClass *klass, const void *data)
