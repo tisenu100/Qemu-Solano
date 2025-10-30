@@ -225,7 +225,6 @@ static void sst_realize(DeviceState *d, Error **errp)
     sysbus_init_mmio(SYS_BUS_DEVICE(d), &s->mem);
 
     fprintf(stderr, "SST: Assigned a BIOS flash image of %d KB\n", (int)(blk_getlength(blk) / 1024));
-    sst_read(s, 0, 0); /* Return the Chip variant on console */
 
     /* Get all updated changes */
     s->buf = memory_region_get_ram_ptr(&s->mem);
