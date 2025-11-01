@@ -931,7 +931,6 @@ static void processFifo(GlidePTState *s)
 
 static void glidept_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
 {
-    COMMIT_SIGN;
     GlidePTState *s = opaque;
 
     switch (addr) {
@@ -944,7 +943,6 @@ static void glidept_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
 	case 0xfbc:
             if ((val == 0xa0243) || (val == 0xa0211) || (val == 0xa0301)) {
                 s->initDLL = 0;
-                if (memcmp(s->glfb_ptr + SHLFB_SIZE - ALIGNBO(1), rev_, ALIGNED(1)))
                     break;
             }
 	    if (val == 0xa0243) {
