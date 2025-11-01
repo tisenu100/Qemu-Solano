@@ -203,6 +203,12 @@ void isa_fdc_set_iobase(ISADevice *fdc, hwaddr iobase)
     portio_list_set_address(&isa->portio_list, isa->iobase);
 }
 
+void isa_fdc_set_irq(ISADevice *fdc, int irq)
+{
+    FDCtrlISABus *isa = ISA_FDC(fdc);
+    isa->state.irq = isa_get_irq(fdc, irq);
+}
+
 void isa_fdc_set_enabled(ISADevice *fdc, bool enabled)
 {
     portio_list_set_enabled(&ISA_FDC(fdc)->portio_list, enabled);

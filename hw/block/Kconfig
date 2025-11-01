@@ -19,6 +19,10 @@ config PFLASH_CFI01
 config PFLASH_CFI02
     bool
 
+config SST_LPC
+    bool
+    depends on PFLASH_CFI01
+
 config VIRTIO_BLK
     bool
     default y

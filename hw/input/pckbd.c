@@ -89,7 +89,7 @@
 #define KBD_STAT_OBF           0x01
 /* Keyboard input buffer full */
 #define KBD_STAT_IBF           0x02
-/* Self test successful */
+/* System flag */
 #define KBD_STAT_SELFTEST      0x04
 /* Last write was a command write (0=data) */
 #define KBD_STAT_CMD           0x08
@@ -356,7 +356,6 @@ static void kbd_write_command(void *opaque, hwaddr addr,
         kbd_queue(s, 0x00, 0);
         break;
     case KBD_CCMD_SELF_TEST:
-        s->status |= KBD_STAT_SELFTEST;
         kbd_queue(s, 0x55, 0);
         break;
     case KBD_CCMD_KBD_TEST:
@@ -476,12 +475,18 @@ static void kbd_reset(void *opaque)
 
     s->mode = KBD_MODE_KBD_INT | KBD_MODE_MOUSE_INT;
     s->status = KBD_STAT_CMD | KBD_STAT_UNLOCKED;
+
+    if(s->is_warm_reset)
+        s->status |= KBD_STAT_SELFTEST;
+
     s->outport = KBD_OUT_RESET | KBD_OUT_A20 | KBD_OUT_ONES;
     s->pending = 0;
     kbd_deassert_irq(s);
     if (s->throttle_timer) {
         timer_del(s->throttle_timer);
     }
+
+    s->is_warm_reset = 1;
 }
 
 static uint8_t kbd_outport_default(KBDState *s)
@@ -852,6 +857,8 @@ static void i8042_initfn(Object *obj)
                             "ps2-kbd-input-irq", 1);
     qdev_init_gpio_in_named(DEVICE(obj), i8042_set_mouse_irq,
                             "ps2-mouse-input-irq", 1);
+    
+    s->is_warm_reset = 0;
 }
 
 static void i8042_realizefn(DeviceState *dev, Error **errp)

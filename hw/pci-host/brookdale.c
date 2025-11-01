@@ -26,7 +26,6 @@
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qemu/range.h"
-#include "qemu/qemu-print.h"
 #include "hw/i386/pc.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_host.h"
@@ -55,13 +54,6 @@ struct I845State {
 
     char *pci_type;
 };
-
-static void i845_realize(PCIDevice *dev, Error **errp)
-{
-    if (object_property_get_bool(qdev_get_machine(), "iommu", NULL)) {
-        warn_report("i845E doesn't support emulated iommu");
-    }
-}
 
 static void i845_update_pam(int segment, PCII845State *d)
 {
@@ -94,11 +86,8 @@ static void i845_update_smram(PCII845State *d)
         if(val & 0x40) { /* D_OPEN */
             memory_region_set_enabled(&d->low_smram, true);
         }
-        else if(val & 0x20) { /* D_CLS */
+        else {
             memory_region_set_enabled(&d->low_smram, true);
-            memory_region_set_enabled(&d->smram_region, true);
-        }
-        else { /* Enabled SMM Space but inaccessible */
             memory_region_set_enabled(&d->smram_region, true);
         }
     }
@@ -260,7 +249,7 @@ static void i845_pcihost_realize(DeviceState *dev, Error **errp)
     PCIDevice *d;
     PCII845State *f;
 
-    qemu_printf("Intel 845: Setting up the Bus\n");
+    fprintf(stderr, "Intel 845: Setting up the Bus\n");
 
     memory_region_add_subregion(s->io_memory, 0xcf8, &phb->conf_mem);
     sysbus_init_ioports(sbd, 0xcf8, 4);
@@ -279,7 +268,7 @@ static void i845_pcihost_realize(DeviceState *dev, Error **errp)
 
     range_set_bounds(&s->pci_hole, s->below_4g_mem_size, IO_APIC_DEFAULT_ADDRESS - 1);
 
-    qemu_printf("Intel 845: Setting up Memory\n");
+    fprintf(stderr, "Intel 845: Setting up Memory\n");
     pc_pci_as_mapping_init(s->system_memory, s->pci_address_space);
 
     /* AB segment for PCI */
@@ -304,7 +293,7 @@ static void i845_pcihost_realize(DeviceState *dev, Error **errp)
         init_pam(&f->pam_regions[i + 1], OBJECT(d), s->ram_memory, s->system_memory, s->pci_address_space, 0xc0000 + i * 0x4000, 0x4000);
     }
 
-    qemu_printf("Intel 845: Initialization complete\n");
+    fprintf(stderr, "Intel 845: Initialization complete\n");
 }
 
 static void i845_class_init(ObjectClass *klass, const void *data)
@@ -312,7 +301,6 @@ static void i845_class_init(ObjectClass *klass, const void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
-    k->realize = i845_realize;
     k->config_write = i845_write_config;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
     k->device_id = PCI_DEVICE_ID_INTEL_I845;

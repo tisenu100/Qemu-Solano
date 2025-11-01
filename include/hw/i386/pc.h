@@ -195,8 +195,7 @@ void pc_basic_device_init(struct PCMachineState *pcms,
                           bool create_fdctrl,
                           uint32_t hpet_irqs);
 void pc_basic_device_init_simple(struct PCMachineState *pcms,
-                                 ISABus *isa_bus, qemu_irq *gsi,
-                                 ISADevice *rtc_state);
+                                 ISABus *isa_bus, qemu_irq *gsi);
 void pc_nic_init(PCMachineClass *pcmc, ISABus *isa_bus, PCIBus *pci_bus);
 
 void pc_i8259_create(ISABus *isa_bus, qemu_irq *i8259_irqs);
@@ -235,6 +234,9 @@ void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size);
 
 /* sgx.c */
 void pc_machine_init_sgx_epc(PCMachineState *pcms);
+
+extern GlobalProperty pc_compat_10_1[];
+extern const size_t pc_compat_10_1_len;
 
 extern GlobalProperty pc_compat_10_0[];
 extern const size_t pc_compat_10_0_len;

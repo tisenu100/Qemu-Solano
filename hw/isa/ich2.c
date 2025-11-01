@@ -26,7 +26,6 @@
 
 #include "qemu/osdep.h"
 #include "qemu/range.h"
-#include "qemu/qemu-print.h"
 #include "qapi/error.h"
 #include "hw/acpi/acpi.h"
 #include "hw/acpi/ich9_tco.h"
@@ -54,13 +53,13 @@ static void apm_ctrl_changed(uint32_t val, void *opaque)
     }
 
     if (s->smi[0] & 0x20) {
-        qemu_printf("Intel ICH2: An APMC SMI was provoked\n");
+        fprintf(stderr, "Intel ICH2: An APMC SMI was provoked\n");
         s->smi[4] |= 0x20;
         qemu_irq_raise(s->smi_irq);
     }
 }
 
-static void gpio_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+static void gpe_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
 {
     ACPIREGS *ar = opaque;
     ICH2State *d = container_of(ar, ICH2State, ar);
@@ -69,15 +68,15 @@ static void gpio_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
     acpi_update_sci(ar, d->smi_irq); /* The BIOS want to generate a wake event via this */
 }
 
-static uint64_t gpio_read(void *opaque, hwaddr addr, unsigned len)
+static uint64_t gpe_read(void *opaque, hwaddr addr, unsigned len)
 {
     ACPIREGS *ar = opaque;
     return acpi_gpe_ioport_readb(ar, addr);
 }
 
-static const MemoryRegionOps gpio_ops = {
-    .read = gpio_read,
-    .write = gpio_write,
+static const MemoryRegionOps gpe_ops = {
+    .read = gpe_read,
+    .write = gpe_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
     .impl = {
         .min_access_size = 1,
@@ -112,6 +111,26 @@ static const MemoryRegionOps smi_ops = {
     },
 };
 
+static void dummy_smi_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+{
+    /* EMPTY */
+}
+
+static uint64_t dummy_smi_read(void *opaque, hwaddr addr, unsigned len)
+{
+    return 0;
+}
+
+static const MemoryRegionOps dummy_smi_ops = { /* For the SMI Traps & Monitoring */
+    .read = dummy_smi_read,
+    .write = dummy_smi_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+};
+
 static void ich2_update_acpi(ICH2State *s)
 {
     PCIDevice *pci_dev = PCI_DEVICE(s);
@@ -126,7 +145,7 @@ static void ich2_update_acpi(ICH2State *s)
     if(enable && (addr != 0)) {
         memory_region_set_address(&s->acpi_io, addr);
         memory_region_set_enabled(&s->acpi_io, true);
-        qemu_printf("Intel ICH2: ACPI was enabled at address 0x%04x\n", addr);
+        fprintf(stderr, "Intel ICH2: ACPI was enabled at address 0x%04x\n", addr);
     }
 
     memory_region_transaction_commit();
@@ -145,8 +164,58 @@ static void ich2_update_acpi(ICH2State *s)
         break;
     }
 
-    qemu_printf("Intel ICH2: SCI IRQ was set to %d\n", sci_num);
+    fprintf(stderr, "Intel ICH2: SCI IRQ was set to %d\n", sci_num);
     s->sci_irq = s->isa_irqs_in[sci_num];
+}
+
+static void gpio_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+{
+    ICH2State *d = opaque;
+
+    if((addr > 0x03) && (addr < 0x07)) /* Fixed GPIO's */
+        return;
+
+    if(addr < 0x30)
+        d->gpio[addr] = val;
+}
+
+static uint64_t gpio_read(void *opaque, hwaddr addr, unsigned len)
+{
+    ICH2State *d = opaque;
+
+    if(addr < 0x30)
+        return d->gpio[addr];
+    else
+        return 0;
+}
+
+static const MemoryRegionOps gpio_ops = {
+    .read = gpio_read,
+    .write = gpio_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
+};
+
+static void ich2_update_gpio(ICH2State *s)
+{
+    PCIDevice *pci_dev = PCI_DEVICE(s);
+    uint16_t addr = pci_get_word(pci_dev->config + 0x58) & 0xffc0;
+    bool enable = !!(pci_get_byte(pci_dev->config + 0x5c) & 0x10);
+
+    memory_region_transaction_begin();
+
+    memory_region_set_enabled(&s->gpio_io, false);
+
+    if(enable && (addr != 0)) {
+        memory_region_set_address(&s->gpio_io, addr);
+        memory_region_set_enabled(&s->gpio_io, true);
+        fprintf(stderr, "Intel ICH2: GPIO was enabled at address 0x%04x\n", addr);
+    }
+
+    memory_region_transaction_commit();
 }
 
 static int ich2_get_pirq(PCIDevice *pci_dev, int pirq)
@@ -204,6 +273,11 @@ static void ich2_write_config(PCIDevice *dev, uint32_t address, uint32_t val, in
             ich2_update_acpi(s);
         break;
 
+        case 0x58: case 0x59: case 0x5a: case 0x5b:
+        case 0x5c:
+            ich2_update_gpio(s);
+        break;
+
         case 0x60: case 0x61: case 0x62: case 0x63:
         case 0x68: case 0x69: case 0x6a: case 0x6b:
             pci_bus_fire_intx_routing_notifier(pci_get_bus(&s->dev));
@@ -216,7 +290,7 @@ static void rcr_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
     ICH2State *d = opaque;
 
     if (val & 4) {
-        qemu_printf("Intel ICH2: Reset triggered by RCR\n");
+        fprintf(stderr, "Intel ICH2: Reset triggered by RCR\n");
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
         return;
     }
@@ -254,13 +328,23 @@ static void ich2_reset(DeviceState *dev)
     pci_set_long(pci_dev->config + 0x60, 0x80808080);
     pci_set_byte(pci_dev->config + 0x54, 0x10);
     pci_set_long(pci_dev->config + 0x68, 0x80808080);
-    pci_set_long(pci_dev->config + 0xd4, 0x00000f00);
     pci_set_byte(pci_dev->config + 0xe1, 0xff);
     pci_set_long(pci_dev->config + 0xe8, 0x00112233);
     pci_set_word(pci_dev->config + 0xee, 0x5678);
     pci_set_byte(pci_dev->config + 0xf2, 0x0f);
 
+    d->gpio[0x00] = 0x80;
+    d->gpio[0x01] = 0x31;
+    d->gpio[0x03] = 0x1a;
+    d->gpio[0x04] = 0xff;
+    d->gpio[0x05] = 0xff;
+    d->gpio[0x0e] = 0x3f;
+    d->gpio[0x0f] = 0x1b;
+    d->gpio[0x16] = 0x63;
+    d->gpio[0x17] = 0x06;
+
     ich2_update_acpi(d);
+    ich2_update_gpio(d);
     acpi_pm1_evt_reset(&d->ar);
     acpi_pm1_cnt_reset(&d->ar);
     acpi_pm_tmr_reset(&d->ar);
@@ -275,7 +359,6 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
     ICH2State *d = ICH2_PCI_DEVICE(dev);
     PCIBus *pci_bus = pci_get_bus(dev);
     ISABus *isa_bus;
-    uint32_t irq;
 
     isa_bus = isa_bus_new(DEVICE(d), pci_address_space(dev), pci_address_space_io(dev), errp);
 
@@ -283,24 +366,17 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
         return;
     }
 
-    qemu_printf("Intel ICH2: Setup RCR\n");
+    fprintf(stderr, "Intel ICH2: Setup RCR\n");
     memory_region_init_io(&d->rcr_mem, OBJECT(dev), &rcr_ops, d, "reset-control", 1);
     memory_region_add_subregion_overlap(pci_address_space_io(dev), 0xcf9, &d->rcr_mem, 1);
 
-    qemu_printf("Intel ICH2: Setup LPC bus\n");
+    fprintf(stderr, "Intel ICH2: Setup LPC bus\n");
     isa_bus_register_input_irqs(isa_bus, d->isa_irqs_in);
-
-    qdev_prop_set_int32(DEVICE(&d->rtc), "base_year", 2000);
-    if (!qdev_realize(DEVICE(&d->rtc), BUS(isa_bus), errp)) {
-        return;
-    }
-    irq = object_property_get_uint(OBJECT(&d->rtc), "irq", &error_fatal);
-    isa_connect_gpio_out(ISA_DEVICE(&d->rtc), 0, irq);
 
     pci_bus_irqs(pci_bus, ich2_update_pirq, d, 8);
     pci_bus_set_route_irq_fn(pci_bus, ich2_route_intx_pin_to_irq);
 
-    qemu_printf("Intel ICH2: Setup ACPI\n");
+    fprintf(stderr, "Intel ICH2: Setup ACPI\n");
     memory_region_init(&d->acpi_io, OBJECT(d), "ich2-acpi", 128);
     memory_region_set_enabled(&d->acpi_io, false);
     memory_region_add_subregion(pci_address_space_io(dev), 0, &d->acpi_io);
@@ -308,16 +384,28 @@ static void pci_ich2_realize(PCIDevice *dev, Error **errp)
     acpi_pm_tmr_init(&d->ar, pm_tmr_timer, &d->acpi_io);
     acpi_pm1_evt_init(&d->ar, pm_tmr_timer, &d->acpi_io);
     acpi_pm1_cnt_init(&d->ar, &d->acpi_io, 0, 0, 6, 1);
-    acpi_gpe_init(&d->ar, 4);
+    acpi_gpe_init(&d->ar, 8);
     acpi_pm_tco_init(&d->tco, &d->acpi_io);
 
-    memory_region_init_io(&d->gpio_io, OBJECT(dev), &gpio_ops, &d->ar, "gpio", 8);
-    memory_region_add_subregion_overlap(&d->gpio_io, 0x28, &d->gpio_io, 1);
+    memory_region_init_io(&d->gpe_io, OBJECT(dev), &gpe_ops, &d->ar, "gpe", 8);
+    memory_region_add_subregion_overlap(&d->acpi_io, 0x28, &d->gpe_io, 1);
 
     memory_region_init_io(&d->smi_io, OBJECT(dev), &smi_ops, d, "smi-control", 8);
     memory_region_add_subregion_overlap(&d->acpi_io, 0x30, &d->smi_io, 1);
 
+    memory_region_init_io(&d->smi_monitor_io, OBJECT(dev), &dummy_smi_ops, d, "smi-monitor", 2);
+    memory_region_add_subregion_overlap(&d->acpi_io, 0x40, &d->smi_monitor_io, 1);
+
+    memory_region_init_io(&d->smi_traps_io, OBJECT(dev), &dummy_smi_ops, d, "smi-traps", 8);
+    memory_region_add_subregion_overlap(&d->acpi_io, 0x44, &d->smi_traps_io, 1);
+
     apm_init(dev, &d->apm, apm_ctrl_changed, d);
+
+    fprintf(stderr, "Intel ICH2: Setup GPIO\n");
+    d->gpio[0x1a] = 0x04; /* Won't clear with PCIRST# */
+    memory_region_init_io(&d->gpio_io, OBJECT(dev), &gpio_ops, d, "ich2-gpio", 64);
+    memory_region_set_enabled(&d->gpio_io, false);
+    memory_region_add_subregion(pci_address_space_io(dev), 0, &d->gpio_io);
 }
 
 static void pci_ich2_init(Object *obj)
@@ -327,8 +415,6 @@ static void pci_ich2_init(Object *obj)
     qdev_init_gpio_out_named(DEVICE(obj), d->isa_irqs_in, "isa-irqs", IOAPIC_NUM_PINS);
     qdev_init_gpio_out(DEVICE(obj), &d->sci_irq, 1);
     qdev_init_gpio_out_named(DEVICE(obj), &d->smi_irq, "smi-irq", 1);
-
-    object_initialize_child(obj, "rtc", &d->rtc, TYPE_MC146818_RTC);
 }
 
 static void pci_ich2_class_init(ObjectClass *klass, const void *data)

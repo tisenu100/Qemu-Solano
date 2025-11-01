@@ -29,10 +29,85 @@
 #include "qemu/qemu-print.h"
 #include "qapi/error.h"
 #include "hw/pci/pci.h"
+#include "hw/irq.h"
 #include "hw/southbridge/ich2.h"
 #include "hw/ide/pci.h"
 #include "ide-internal.h"
 #include "trace.h"
+
+static uint64_t ich2_ide_data_pci_read(void *opaque, hwaddr addr, unsigned len)
+{
+    uint64_t ret;
+
+    switch(len)
+    {
+        default:
+            ret = ide_ioport_read(opaque, (uint32_t)addr);
+        break;
+
+        case 2:
+            if(addr > 1)
+                fprintf(stderr, "Intel ICH2 IDE: Illegal IDE Data access\n");
+
+            ret = ide_data_readw(opaque, (uint32_t)addr);
+        break;
+
+        case 4:
+            if(addr > 1)
+                fprintf(stderr, "Intel ICH2 IDE: Illegal IDE Data access\n");
+
+            ret = ide_data_readl(opaque, (uint32_t)addr);
+        break;
+    }
+
+    return ret;
+}
+
+static void ich2_ide_data_pci_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+{
+    switch(len)
+    {
+        default:
+            ide_ioport_write(opaque, (uint32_t)addr, (uint32_t)val);
+        break;
+
+        case 2:
+            if(addr > 1)
+                fprintf(stderr, "Intel ICH2 IDE: Illegal IDE Data access\n");
+
+            ide_data_writew(opaque, (uint32_t)addr, (uint32_t)val);
+        break;
+
+        case 4:
+            if(addr > 1)
+                fprintf(stderr, "Intel ICH2 IDE: Illegal IDE Data access\n");
+
+            ide_data_writel(opaque, (uint32_t)addr, (uint32_t)val);
+        break;
+    }
+}
+
+static const MemoryRegionOps ich2_ide_data_pci_ops = {
+    .read = ich2_ide_data_pci_read,
+    .write = ich2_ide_data_pci_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+static uint64_t ich2_ide_cmd_pci_read(void *opaque, hwaddr addr, unsigned len)
+{
+    return ide_status_read(opaque, (uint32_t)addr);
+}
+
+static void ich2_ide_cmd_pci_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
+{
+    ide_ctrl_write(opaque, (uint32_t)addr, (uint32_t)val);
+}
+
+static const MemoryRegionOps ich2_ide_cmd_pci_ops = {
+    .read = ich2_ide_cmd_pci_read,
+    .write = ich2_ide_cmd_pci_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
 
 static uint64_t bmdma_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -98,6 +173,57 @@ static void bmdma_setup_bar(PCIIDEState *d)
     }
 }
 
+static void ich2_ide_raise_irq(void *opaque, int n, int level)
+{
+    PCIIDEState *d = opaque;
+
+    qemu_set_irq(d->isa_irq[n], level);
+}
+
+static void ich2_update_drives(PCIIDEState *d)
+{
+    PCIDevice *dev = PCI_DEVICE(d);
+    bool enabled = pci_get_byte(dev->config + PCI_COMMAND) & 0x01;
+    uint32_t drive_stats = pci_get_long(dev->config + 0x40);
+
+    if(enabled) {
+        fprintf(stderr, "Intel ICH2 IDE: Drive update P:%s S:%s\n", \
+                (drive_stats & 0x00008000) ? "ON" : "OFF",          \
+                (drive_stats & 0x80000000) ? "ON" : "OFF"           \
+               );
+    }
+
+    memory_region_transaction_begin();
+
+    memory_region_set_enabled(&d->data_bar[0], false);
+    memory_region_set_enabled(&d->cmd_bar[0], false);
+    memory_region_set_enabled(&d->data_bar[1], false);
+    memory_region_set_enabled(&d->cmd_bar[1], false);
+
+    if(drive_stats & 0x00008000) {
+        memory_region_set_enabled(&d->data_bar[0], true);
+        memory_region_set_enabled(&d->cmd_bar[0], true);
+    }
+
+
+    if(drive_stats & 0x80000000) {
+        memory_region_set_enabled(&d->data_bar[1], true);
+        memory_region_set_enabled(&d->cmd_bar[1], true);
+    }
+
+    memory_region_transaction_commit();
+}
+
+static void ich2_ide_config_write(PCIDevice *dev, uint32_t addr, uint32_t val, int len)
+{
+    PCIIDEState *d = PCI_IDE(dev);
+
+    pci_default_write_config(dev, addr, val, len);
+
+    if(((addr >= 0x40) && (addr <= 0x43)) || (addr == 0x04))
+        ich2_update_drives(d);
+}
+
 static void ich2_ide_reset(DeviceState *dev)
 {
     PCIIDEState *d = PCI_IDE(dev);
@@ -111,21 +237,29 @@ static void ich2_ide_reset(DeviceState *dev)
     pci_set_word(pci_dev->config + PCI_COMMAND, 0x0000);
     pci_set_word(pci_dev->config + PCI_STATUS, PCI_STATUS_DEVSEL_MEDIUM | PCI_STATUS_FAST_BACK);
     pci_set_byte(pci_dev->config + PCI_CLASS_PROG, 0x80);
-    pci_set_long(pci_dev->config + 0x20, 0x0000001);
+    pci_set_long(pci_dev->config + 0x20, 0x00000001);
 }
 
 static void ich2_ide_realize(PCIDevice *dev, Error **errp)
 {
     PCIIDEState *d = PCI_IDE(dev);
 
+    qdev_init_gpio_in(DEVICE(d), ich2_ide_raise_irq, 2);
+
     ide_bus_init(&d->bus[0], sizeof(d->bus[0]), DEVICE(d), 0, 2);
-    ide_init_ioport(&d->bus[0], NULL, 0x1f0, 0x3f6);
-    ide_bus_init_output_irq(&d->bus[0], isa_get_irq(NULL, 14));
+    memory_region_init_io(&d->data_bar[0], OBJECT(d), &ich2_ide_data_pci_ops, &d->bus[0], "ich2-ide0-data", 8);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x1f0, &d->data_bar[0], 1);
+    memory_region_init_io(&d->cmd_bar[0], OBJECT(d), &ich2_ide_cmd_pci_ops, &d->bus[0], "ich2-ide0-cmd", 1);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x3f6, &d->cmd_bar[0], 1);
+    ide_bus_init_output_irq(&d->bus[0], qdev_get_gpio_in(DEVICE(dev), 0));
     bmdma_init(&d->bus[0], &d->bmdma[0], d);
 
     ide_bus_init(&d->bus[1], sizeof(d->bus[1]), DEVICE(d), 1, 2);
-    ide_init_ioport(&d->bus[1], NULL, 0x170, 0x376);
-    ide_bus_init_output_irq(&d->bus[1], isa_get_irq(NULL, 15));
+    memory_region_init_io(&d->data_bar[1], OBJECT(d), &ich2_ide_data_pci_ops, &d->bus[1], "ich2-ide1-data", 8);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x170, &d->data_bar[1], 1);
+    memory_region_init_io(&d->cmd_bar[1], OBJECT(d), &ich2_ide_cmd_pci_ops, &d->bus[1], "ich2-ide1-cmd", 1);
+    memory_region_add_subregion_overlap(pci_address_space_io(dev), 0x376, &d->cmd_bar[1], 1);
+    ide_bus_init_output_irq(&d->bus[1], qdev_get_gpio_in(DEVICE(dev), 1));
     bmdma_init(&d->bus[1], &d->bmdma[1], d);
 
     bmdma_setup_bar(d);
@@ -149,12 +283,14 @@ static void ich2_ide_class_init(ObjectClass *klass, const void *data)
 
     device_class_set_legacy_reset(dc, ich2_ide_reset);
     dc->vmsd = &vmstate_ide_pci;
+    k->config_write = ich2_ide_config_write;
     k->realize = ich2_ide_realize;
     k->exit = ich2_ide_exitfn;
     k->vendor_id = PCI_VENDOR_ID_INTEL;
     k->device_id = PCI_DEVICE_ID_INTEL_ICH2_IDE;
     k->class_id = PCI_CLASS_STORAGE_IDE;
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
+    dc->user_creatable = false;
     dc->hotpluggable = false;
 }
 

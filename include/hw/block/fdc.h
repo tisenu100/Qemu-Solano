@@ -15,6 +15,7 @@ void sun4m_fdctrl_init(qemu_irq irq, hwaddr io_base,
                        DriveInfo **fds, qemu_irq *fdc_tc);
 
 void isa_fdc_set_iobase(ISADevice *fdc, hwaddr iobase);
+void isa_fdc_set_irq(ISADevice *fdc, int irq);
 void isa_fdc_set_enabled(ISADevice *fdc, bool enabled);
 
 FloppyDriveType isa_fdc_get_drive_type(ISADevice *fdc, int i);

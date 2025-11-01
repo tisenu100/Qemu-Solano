@@ -4,7 +4,7 @@ config X86_FW_OVMF
 config SEV
     bool
     select X86_FW_OVMF
-    depends on KVM
+    depends on KVM && X86_64
 
 config SGX
     bool
@@ -104,6 +104,7 @@ config SOLANO
     select IDE_ICH2
     select ICH2_SMBUS
     select W83627HF
+    select SST_LPC
 
 config ISAPC
     bool
@@ -113,9 +114,6 @@ config ISAPC
     select ISA_BUS
     select PC
     select IDE_ISA
-    # FIXME: it is in the same file as i440fx, and does not compile
-    # if separated
-    depends on I440FX
 
 config Q35
     bool
@@ -148,6 +146,7 @@ config MICROVM
     select I8259
     select MC146818RTC
     select VIRTIO_MMIO
+    select ACPI_PCI
     select ACPI_HW_REDUCED
     select PCI_EXPRESS_GENERIC_BRIDGE
     select USB_XHCI_SYSBUS
