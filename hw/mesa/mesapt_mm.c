@@ -2212,13 +2212,15 @@ static void ContextCreateCommon(MesaPTState *s)
 
 static void mesapt_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
 {
+    COMMIT_SIGN;
     MesaPTState *s = opaque;
 
     if (addr == 0xFBC) {
         switch (val) {
             case 0xA0320:
                 s->MesaVer = 0;
-                if ((InitMesaGL() == 0)) {
+                if ((memcmp(s->fbtm_ptr + MGLFBT_SIZE - ALIGNBO(1), rev_, ALIGNED(1)) == 0) &&
+                    (InitMesaGL() == 0)) {
                     s->MesaVer = (uint32_t)((val >> 12) & 0xFFU) | ((val & 0xFFFU) << 8);
                     s->mglCntxAtt = 0;
                     MGLTmpContext();
@@ -2320,6 +2322,8 @@ static void mesapt_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
                         DPRINTF_COND((ptVer[0] && (lvl_prev != level) && (0 == NumPbuffer())),
                             "wglMakeCurrent cntx %d curr %d lvl %d", s->mglContext, s->mglCntxCurrent, level);
                         lvl_prev = level;
+                        if (ptVer[0] && !level)
+                            dispTimerSched(s->dispTimer, &s->crashRC);
                         MGLMakeCurrent(ptVer[0], level);
                     }
                 } while(0);
@@ -2361,10 +2365,12 @@ static void mesapt_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
         disable = (*(int *)ppfd) & 0x02U, \
         msaa = (*(int *)ppfd) & 0x0CU, \
         flip = (*(int *)ppfd) & 0x10U, \
+        ctx0 = (*(int *)ppfd) & 0x20U, \
         msec = *(int *)PTR(ppfd, sizeof(int)); \
     GLBufOAccelCfg(enable); \
     GLRenderScaler(disable); \
     GLContextMSAA(msaa); \
+    GLContextZERO(ctx0); \
     GLBlitFlip(flip); \
     GLDispTimerCfg(msec)
                 do {

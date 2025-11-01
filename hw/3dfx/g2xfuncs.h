@@ -255,4 +255,4 @@ typedef enum {
 #endif /* QEMU_OSDEP_H */
 
 #define COMMIT_SIGN \
-    const char rev_[] = "deadbeef00-"
+    const char rev_[ALIGNED(1)]
