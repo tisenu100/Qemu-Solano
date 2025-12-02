@@ -69,6 +69,9 @@ static void *qtest_server_send_opaque;
  * so clients should always handle many async messages before the response
  * comes in.
  *
+ * Extra ASCII space characters in command inputs are permitted and ignored.
+ * Lines containing only spaces are permitted and ignored.
+ *
  * Valid requests
  * ^^^^^^^^^^^^^^
  *
@@ -367,7 +370,11 @@ static void qtest_process_command(CharFrontend *chr, gchar **words)
         fprintf(qtest_log_fp, "\n");
     }
 
-    g_assert(command);
+    if (!command) {
+        /* Input line was blank: ignore it */
+        return;
+    }
+
     if (strcmp(words[0], "irq_intercept_out") == 0
         || strcmp(words[0], "irq_intercept_in") == 0) {
         DeviceState *dev;
@@ -808,6 +815,10 @@ static void qtest_event(void *opaque, QEMUChrEvent event)
         }
         break;
     case CHR_EVENT_CLOSED:
+        if (!qtest_opened) {
+            /* Ignore CLOSED events if we have already closed the log */
+            break;
+        }
         qtest_opened = false;
         if (qtest_log_fp) {
             fprintf(qtest_log_fp, "[I +" FMT_timeval "] CLOSED\n", g_timer_elapsed(timer, NULL));

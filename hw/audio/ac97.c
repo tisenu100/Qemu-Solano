@@ -18,8 +18,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/audio/soundhw.h"
-#include "audio/audio.h"
+#include "hw/audio/model.h"
+#include "qemu/audio.h"
 #include "hw/pci/pci_device.h"
 #include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
@@ -120,7 +120,7 @@ typedef struct AC97BusMasterRegs {
 
 struct AC97LinkState {
     PCIDevice dev;
-    QEMUSoundCard card;
+    AudioBackend *audio_be;
     uint32_t glob_cnt;
     uint32_t glob_sta;
     uint32_t cas;
@@ -324,7 +324,7 @@ static void open_voice(AC97LinkState *s, int index, int freq)
         switch (index) {
         case PI_INDEX:
             s->voice_pi = AUD_open_in(
-                &s->card,
+                s->audio_be,
                 s->voice_pi,
                 "ac97.pi",
                 s,
@@ -335,7 +335,7 @@ static void open_voice(AC97LinkState *s, int index, int freq)
 
         case PO_INDEX:
             s->voice_po = AUD_open_out(
-                &s->card,
+                s->audio_be,
                 s->voice_po,
                 "ac97.po",
                 s,
@@ -346,7 +346,7 @@ static void open_voice(AC97LinkState *s, int index, int freq)
 
         case MC_INDEX:
             s->voice_mc = AUD_open_in(
-                &s->card,
+                s->audio_be,
                 s->voice_mc,
                 "ac97.mc",
                 s,
@@ -359,17 +359,17 @@ static void open_voice(AC97LinkState *s, int index, int freq)
         s->invalid_freq[index] = freq;
         switch (index) {
         case PI_INDEX:
-            AUD_close_in(&s->card, s->voice_pi);
+            AUD_close_in(s->audio_be, s->voice_pi);
             s->voice_pi = NULL;
             break;
 
         case PO_INDEX:
-            AUD_close_out(&s->card, s->voice_po);
+            AUD_close_out(s->audio_be, s->voice_po);
             s->voice_po = NULL;
             break;
 
         case MC_INDEX:
-            AUD_close_in(&s->card, s->voice_mc);
+            AUD_close_in(s->audio_be, s->voice_mc);
             s->voice_mc = NULL;
             break;
         }
@@ -420,7 +420,7 @@ static void update_combined_volume_out(AC97LinkState *s)
     lvol = (lvol * plvol) / 255;
     rvol = (rvol * prvol) / 255;
 
-    AUD_set_volume_out(s->voice_po, mute, lvol, rvol);
+    AUD_set_volume_out_lr(s->voice_po, mute, lvol, rvol);
 }
 
 static void update_volume_in(AC97LinkState *s)
@@ -431,7 +431,7 @@ static void update_volume_in(AC97LinkState *s)
     get_volume(mixer_load(s, AC97_Record_Gain_Mute), 0x0f, 0,
                &mute, &lvol, &rvol);
 
-    AUD_set_volume_in(s->voice_pi, mute, lvol, rvol);
+    AUD_set_volume_in_lr(s->voice_pi, mute, lvol, rvol);
 }
 
 static void set_volume(AC97LinkState *s, int index, uint32_t val)
@@ -1282,33 +1282,14 @@ static void ac97_realize(PCIDevice *dev, Error **errp)
     AC97LinkState *s = AC97(dev);
     uint8_t *c = s->dev.config;
 
-    if (!AUD_register_card ("ac97", &s->card, errp)) {
+    if (!AUD_backend_check (&s->audio_be, errp)) {
         return;
     }
 
-    /* TODO: no need to override */
-    c[PCI_COMMAND] = 0x00;      /* pcicmd pci command rw, ro */
-    c[PCI_COMMAND + 1] = 0x00;
-
-    /* TODO: */
     c[PCI_STATUS] = PCI_STATUS_FAST_BACK;      /* pcists pci status rwc, ro */
     c[PCI_STATUS + 1] = PCI_STATUS_DEVSEL_MEDIUM >> 8;
 
     c[PCI_CLASS_PROG] = 0x00;      /* pi programming interface ro */
-
-    /* TODO set when bar is registered. no need to override. */
-    /* nabmar native audio mixer base address rw */
-    c[PCI_BASE_ADDRESS_0] = PCI_BASE_ADDRESS_SPACE_IO;
-    c[PCI_BASE_ADDRESS_0 + 1] = 0x00;
-    c[PCI_BASE_ADDRESS_0 + 2] = 0x00;
-    c[PCI_BASE_ADDRESS_0 + 3] = 0x00;
-
-    /* TODO set when bar is registered. no need to override. */
-      /* nabmbar native audio bus mastering base address rw */
-    c[PCI_BASE_ADDRESS_0 + 4] = PCI_BASE_ADDRESS_SPACE_IO;
-    c[PCI_BASE_ADDRESS_0 + 5] = 0x00;
-    c[PCI_BASE_ADDRESS_0 + 6] = 0x00;
-    c[PCI_BASE_ADDRESS_0 + 7] = 0x00;
 
     c[PCI_INTERRUPT_LINE] = 0x00;      /* intr_ln interrupt line rw */
     c[PCI_INTERRUPT_PIN] = 0x02;      /* intr_pn interrupt pin ro */
@@ -1327,16 +1308,16 @@ static void ac97_exit(PCIDevice *dev)
 {
     AC97LinkState *s = AC97(dev);
 
-    AUD_close_in(&s->card, s->voice_pi);
-    AUD_close_out(&s->card, s->voice_po);
-    AUD_close_in(&s->card, s->voice_mc);
-    AUD_remove_card(&s->card);
+    AUD_close_in(s->audio_be, s->voice_pi);
+    AUD_close_out(s->audio_be, s->voice_po);
+    AUD_close_in(s->audio_be, s->voice_mc);
 }
 
 static const Property ac97_properties[] = {
     DEFINE_AUDIO_PROPERTIES(AC97LinkState, card),
     DEFINE_PROP_UINT16("ac97-vendor", AC97LinkState, vendor_id, 0x8384),
     DEFINE_PROP_UINT16("ac97-device", AC97LinkState, device_id, 0x7600),
+    DEFINE_AUDIO_PROPERTIES(AC97LinkState, audio_be),
 };
 
 static void ac97_class_init(ObjectClass *klass, const void *data)
@@ -1371,8 +1352,7 @@ static const TypeInfo ac97_info = {
 static void ac97_register_types(void)
 {
     type_register_static(&ac97_info);
-    deprecated_register_soundhw("ac97", "Intel 82801AA AC97 Audio",
-                                0, TYPE_AC97);
+    audio_register_model("ac97", "Intel 82801AA AC97 Audio", TYPE_AC97);
 }
 
 type_init(ac97_register_types)

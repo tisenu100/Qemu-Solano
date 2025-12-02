@@ -54,20 +54,6 @@ as short-form boolean values, and passed to plugins as ``arg_name=on``.
 However, short-form booleans are deprecated and full explicit ``arg_name=on``
 form is preferred.
 
-``-smp`` (Unsupported "parameter=1" SMP configurations) (since 9.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-
-Specified CPU topology parameters must be supported by the machine.
-
-In the SMP configuration, users should provide the CPU topology parameters that
-are supported by the target machine.
-
-However, historically it was allowed for users to specify the unsupported
-topology parameter as "1", which is meaningless. So support for this kind of
-configurations (e.g. -smp drawers=1,books=1,clusters=1 for x86 PC machine) is
-marked deprecated since 9.0, users have to ensure that all the topology members
-described with -smp are supported by the target machine.
-
 QEMU Machine Protocol (QMP) commands
 ------------------------------------
 
@@ -169,10 +155,30 @@ Use ``job-finalize`` instead.
 
 This argument has always been ignored.
 
+Human Machine Protocol (HMP) commands
+-------------------------------------
+
+``wavcapture`` (since 10.2)
+''''''''''''''''''''''''''''
+
+The ``wavcapture`` command is deprecated and will be removed in a future release.
+
+Use ``-audiodev wav`` or your host audio system to capture audio.
+
+``stopcapture`` (since 10.2)
+''''''''''''''''''''''''''''
+
+The ``stopcapture`` command is deprecated and will be removed in a future release.
+
+``info`` argument ``capture`` (since 10.2)
+''''''''''''''''''''''''''''''''''''''''''
+
+The ``info capture`` command is deprecated and will be removed in a future release.
+
 Host Architectures
 ------------------
 
-MIPS (since 11.0)
+MIPS (since 10.2)
 '''''''''''''''''
 
 MIPS is not supported by Debian 13 ("Trixie") and newer, making it hard to
@@ -364,6 +370,15 @@ Options are:
       (without persistence guaranties) with backing file on non DAX storage
     - move backing file to NVDIMM storage and keep ``pmem=on``
       (to have NVDIMM with persistence guaranties).
+
+Using an external DH (Diffie-Hellman) parameters file (since 10.2)
+''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Loading of external Diffie-Hellman parameters from a 'dh-params.pem'
+file is deprecated and will be removed with no replacement in a
+future release. Where no 'dh-params.pem' file is provided, the DH
+parameters will be automatically negotiated in accordance with
+RFC7919.
 
 Device options
 --------------

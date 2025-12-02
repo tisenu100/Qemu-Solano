@@ -36,10 +36,14 @@
 #include "hw/virtio/virtio-net.h"
 #include "hw/virtio/virtio-iommu.h"
 #include "hw/acpi/generic_event_device.h"
-#include "audio/audio.h"
+#include "qemu/audio.h"
 
 GlobalProperty hw_compat_10_1[] = {
     { TYPE_ACPI_GED, "x-has-hest-addr", "false" },
+    { TYPE_VIRTIO_NET, "host_tunnel", "off" },
+    { TYPE_VIRTIO_NET, "host_tunnel_csum", "off" },
+    { TYPE_VIRTIO_NET, "guest_tunnel", "off" },
+    { TYPE_VIRTIO_NET, "guest_tunnel_csum", "off" },
 };
 const size_t hw_compat_10_1_len = G_N_ELEMENTS(hw_compat_10_1);
 
@@ -760,7 +764,7 @@ static void machine_set_audiodev(Object *obj, const char *value,
 {
     MachineState *ms = MACHINE(obj);
 
-    if (!audio_state_by_name(value, errp)) {
+    if (!audio_be_by_name(value, errp)) {
         return;
     }
 
@@ -1200,6 +1204,8 @@ static void machine_class_init(ObjectClass *oc, const void *data)
     object_class_property_add_bool(oc, "aux-ram-share",
                                    machine_get_aux_ram_share,
                                    machine_set_aux_ram_share);
+    object_class_property_set_description(oc, "aux-ram-share",
+        "Use anonymous shared memory for auxiliary guest RAMs");
 #endif
 
     object_class_property_add_bool(oc, "usb",

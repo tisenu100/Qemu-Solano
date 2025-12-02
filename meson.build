@@ -52,7 +52,7 @@ qapi_trace_events = []
 bsd_oses = ['gnu/kfreebsd', 'freebsd', 'netbsd', 'openbsd', 'dragonfly', 'darwin']
 supported_oses = ['windows', 'freebsd', 'netbsd', 'openbsd', 'darwin', 'sunos', 'linux', 'emscripten']
 supported_cpus = ['ppc', 'ppc64', 's390x', 'riscv32', 'riscv64', 'x86', 'x86_64',
-  'arm', 'aarch64', 'loongarch64', 'mips', 'mips64', 'sparc64', 'wasm32']
+  'arm', 'aarch64', 'loongarch64', 'mips64', 'sparc64', 'wasm32']
 
 cpu = host_machine.cpu_family()
 
@@ -1823,33 +1823,11 @@ if not get_option('libcbor').auto() or have_system
 endif
 
 gnutls = not_found
-gnutls_crypto = not_found
 gnutls_bug1717_workaround = false
 if get_option('gnutls').enabled() or (get_option('gnutls').auto() and have_system)
-  # For general TLS support our min gnutls matches
-  # that implied by our platform support matrix
-  #
-  # For the crypto backends, we look for a newer
-  # gnutls:
-  #
-  #   Version 3.6.8  is needed to get XTS
-  #   Version 3.6.13 is needed to get PBKDF
-  #   Version 3.6.14 is needed to get HW accelerated XTS
-  #
-  # If newer enough gnutls isn't available, we can
-  # still use a different crypto backend to satisfy
-  # the platform support requirements
-  gnutls_crypto = dependency('gnutls', version: '>=3.6.14',
-                             method: 'pkg-config',
-                             required: false)
-  if gnutls_crypto.found()
-    gnutls = gnutls_crypto
-  else
-    # Our min version if all we need is TLS
-    gnutls = dependency('gnutls', version: '>=3.5.18',
-                        method: 'pkg-config',
-                        required: get_option('gnutls'))
-  endif
+  gnutls = dependency('gnutls', version: '>=3.7.5',
+                      method: 'pkg-config',
+                      required: get_option('gnutls'))
 
   #if gnutls.found() and not get_option('gnutls-bug1717-workaround').disabled()
     # XXX: when bug 1717 is resolved, add logic to probe for
@@ -1868,20 +1846,14 @@ nettle = not_found
 hogweed = not_found
 crypto_sm4 = not_found
 crypto_sm3 = not_found
-xts = 'none'
 
 if get_option('nettle').enabled() and get_option('gcrypt').enabled()
   error('Only one of gcrypt & nettle can be enabled')
 endif
 
-# Explicit nettle/gcrypt request, so ignore gnutls for crypto
-if get_option('nettle').enabled() or get_option('gcrypt').enabled()
-  gnutls_crypto = not_found
-endif
-
-if not gnutls_crypto.found()
+if not gnutls.found()
   if (not get_option('gcrypt').auto() or have_system) and not get_option('nettle').enabled()
-    gcrypt = dependency('libgcrypt', version: '>=1.8',
+    gcrypt = dependency('libgcrypt', version: '>=1.9.4',
                         required: get_option('gcrypt'))
     # Debian has removed -lgpg-error from libgcrypt-config
     # as it "spreads unnecessary dependencies" which in
@@ -1893,35 +1865,12 @@ if not gnutls_crypto.found()
         version: gcrypt.version())
     endif
     crypto_sm4 = gcrypt
-    # SM4 ALG is available in libgcrypt >= 1.9
-    if gcrypt.found() and not cc.links('''
-      #include <gcrypt.h>
-      int main(void) {
-        gcry_cipher_hd_t handler;
-        gcry_cipher_open(&handler, GCRY_CIPHER_SM4, GCRY_CIPHER_MODE_ECB, 0);
-        return 0;
-      }''', dependencies: gcrypt)
-      crypto_sm4 = not_found
-    endif
     crypto_sm3 = gcrypt
-    # SM3 ALG is available in libgcrypt >= 1.9
-    if gcrypt.found() and not cc.links('''
-      #include <gcrypt.h>
-      int main(void) {
-        gcry_md_hd_t handler;
-        gcry_md_open(&handler, GCRY_MD_SM3, 0);
-        return 0;
-      }''', dependencies: gcrypt)
-      crypto_sm3 = not_found
-    endif
   endif
   if (not get_option('nettle').auto() or have_system) and not gcrypt.found()
-    nettle = dependency('nettle', version: '>=3.4',
+    nettle = dependency('nettle', version: '>=3.7.3',
                         method: 'pkg-config',
                         required: get_option('nettle'))
-    if nettle.found() and not cc.has_header('nettle/xts.h', dependencies: nettle)
-      xts = 'private'
-    endif
     crypto_sm4 = nettle
     # SM4 ALG is available in nettle >= 3.9
     if nettle.found() and not cc.links('''
@@ -2606,7 +2555,6 @@ config_host_data.set('CONFIG_XKBCOMMON', xkbcommon.found())
 config_host_data.set('CONFIG_KEYUTILS', keyutils.found())
 config_host_data.set('CONFIG_GETTID', has_gettid)
 config_host_data.set('CONFIG_GNUTLS', gnutls.found())
-config_host_data.set('CONFIG_GNUTLS_CRYPTO', gnutls_crypto.found())
 config_host_data.set('CONFIG_GNUTLS_BUG1717_WORKAROUND', gnutls_bug1717_workaround)
 config_host_data.set('CONFIG_TASN1', tasn1.found())
 config_host_data.set('CONFIG_GCRYPT', gcrypt.found())
@@ -2614,7 +2562,6 @@ config_host_data.set('CONFIG_NETTLE', nettle.found())
 config_host_data.set('CONFIG_CRYPTO_SM4', crypto_sm4.found())
 config_host_data.set('CONFIG_CRYPTO_SM3', crypto_sm3.found())
 config_host_data.set('CONFIG_HOGWEED', hogweed.found())
-config_host_data.set('CONFIG_QEMU_PRIVATE_XTS', xts == 'private')
 config_host_data.set('CONFIG_MALLOC_TRIM', has_malloc_trim)
 config_host_data.set('CONFIG_ZSTD', zstd.found())
 config_host_data.set('CONFIG_QPL', qpl.found())
@@ -2716,6 +2663,7 @@ config_host_data.set('CONFIG_SYNCFS', cc.has_function('syncfs'))
 config_host_data.set('CONFIG_SYNC_FILE_RANGE', cc.has_function('sync_file_range'))
 config_host_data.set('CONFIG_TIMERFD', cc.has_function('timerfd_create'))
 config_host_data.set('CONFIG_GETLOADAVG', cc.has_function('getloadavg'))
+config_host_data.set('CONFIG_ARPA_INET_64', cc.has_function('htonll'))
 config_host_data.set('HAVE_COPY_FILE_RANGE', cc.has_function('copy_file_range'))
 config_host_data.set('HAVE_GETIFADDRS', cc.has_function('getifaddrs'))
 config_host_data.set('HAVE_GLIB_WITH_SLICE_ALLOCATOR', glib_has_gslice)
@@ -2798,6 +2746,8 @@ endif
 if linux_io_uring.found()
   config_host_data.set('HAVE_IO_URING_PREP_WRITEV2',
                        cc.has_header_symbol('liburing.h', 'io_uring_prep_writev2'))
+  config_host_data.set('HAVE_IO_URING_CQ_HAS_OVERFLOW',
+                       cc.has_header_symbol('liburing.h', 'io_uring_cq_has_overflow'))
 endif
 config_host_data.set('HAVE_TCP_KEEPCNT',
                      cc.has_header_symbol('netinet/tcp.h', 'TCP_KEEPCNT') or
@@ -3312,6 +3262,7 @@ config_devices_h = {}
 config_target_h = {}
 config_target_mak = {}
 config_base_arch_mak = {}
+config_target_info = {}
 
 disassemblers = {
   'alpha' : ['CONFIG_ALPHA_DIS'],
@@ -3560,11 +3511,13 @@ hxtool = find_program('scripts/hxtool')
 shaderinclude = find_program('scripts/shaderinclude.py')
 qapi_gen = find_program('scripts/qapi-gen.py')
 qapi_gen_depends = [ meson.current_source_dir() / 'scripts/qapi/__init__.py',
+                     meson.current_source_dir() / 'scripts/qapi/backend.py',
                      meson.current_source_dir() / 'scripts/qapi/commands.py',
                      meson.current_source_dir() / 'scripts/qapi/common.py',
                      meson.current_source_dir() / 'scripts/qapi/error.py',
                      meson.current_source_dir() / 'scripts/qapi/events.py',
                      meson.current_source_dir() / 'scripts/qapi/expr.py',
+                     meson.current_source_dir() / 'scripts/qapi/features.py',
                      meson.current_source_dir() / 'scripts/qapi/gen.py',
                      meson.current_source_dir() / 'scripts/qapi/introspect.py',
                      meson.current_source_dir() / 'scripts/qapi/main.py',
@@ -3572,7 +3525,6 @@ qapi_gen_depends = [ meson.current_source_dir() / 'scripts/qapi/__init__.py',
                      meson.current_source_dir() / 'scripts/qapi/schema.py',
                      meson.current_source_dir() / 'scripts/qapi/source.py',
                      meson.current_source_dir() / 'scripts/qapi/types.py',
-                     meson.current_source_dir() / 'scripts/qapi/features.py',
                      meson.current_source_dir() / 'scripts/qapi/visit.py',
                      meson.current_source_dir() / 'scripts/qapi-gen.py'
 ]
@@ -3727,6 +3679,7 @@ if have_system
     'hw/gpio',
     'migration',
     'net',
+    'replay',
     'system',
     'ui',
     'hw/remote',
@@ -3911,9 +3864,10 @@ common_ss.add(pagevary)
 specific_ss.add(files('page-vary-target.c'))
 
 common_ss.add(files('target-info.c'))
-specific_ss.add(files('target-info-stub.c'))
+system_ss.add(files('target-info-qom.c'))
 
 subdir('backends')
+subdir('configs/targets')
 subdir('disas')
 subdir('migration')
 subdir('monitor')
@@ -4362,6 +4316,12 @@ foreach target : target_dirs
                                 command: [feature_to_c, '@INPUT@'],
                                 capture: true)
     arch_srcs += gdbstub_xml
+  endif
+
+  if target in config_target_info
+    arch_srcs += config_target_info[target]
+  else
+    arch_srcs += files('target-info-stub.c')
   endif
 
   t = target_arch[target_base_arch].apply(config_target, strict: false)
@@ -4898,14 +4858,10 @@ summary_info = {}
 summary_info += {'TLS priority':      get_option('tls_priority')}
 summary_info += {'GNUTLS support':    gnutls}
 if gnutls.found()
-  summary_info += {'  GNUTLS crypto':   gnutls_crypto.found()}
   summary_info += {'  GNUTLS bug 1717 workaround': gnutls_bug1717_workaround }
 endif
 summary_info += {'libgcrypt':         gcrypt}
 summary_info += {'nettle':            nettle}
-if nettle.found()
-   summary_info += {'  XTS':             xts != 'private'}
-endif
 summary_info += {'SM4 ALG support':   crypto_sm4}
 summary_info += {'SM3 ALG support':   crypto_sm3}
 summary_info += {'AF_ALG support':    have_afalg}

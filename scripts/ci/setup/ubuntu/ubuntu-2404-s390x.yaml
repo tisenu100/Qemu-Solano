@@ -14,6 +14,7 @@ packages:
   - ca-certificates
   - ccache
   - clang
+  - coreutils
   - dbus
   - debianutils
   - diffutils
@@ -26,7 +27,7 @@ packages:
   - git
   - hostname
   - libaio-dev
-  - libasan6
+  - libasan8
   - libasound2-dev
   - libattr1-dev
   - libbpf-dev
@@ -37,7 +38,7 @@ packages:
   - libcap-ng-dev
   - libcapstone-dev
   - libcbor-dev
-  - libclang-dev
+  - libclang-rt-dev
   - libcmocka-dev
   - libcurl4-gnutls-dev
   - libdaxctl-dev
@@ -117,7 +118,7 @@ packages:
   - python3-wheel
   - python3-yaml
   - rpm2cpio
-  - rustc-1.77
+  - rustc-1.83
   - sed
   - socat
   - sparse
