@@ -76,7 +76,7 @@ static int agp_slot_get_pirq(PCIDevice *pci_dev, int pin)
 
 /* Board IRQ table used by the AOpen AX4B-G2 */
 /* To add a device: -device rtl8139,bus=pci.2,addr=04.0 will place an RTL8139 on Slot 1 */
-static int ax4b_slots_get_pirq(PCIDevice *pci_dev, int pin)
+static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
 {
     int ret = 0;
 
@@ -117,51 +117,8 @@ static int ax4b_slots_get_pirq(PCIDevice *pci_dev, int pin)
     return ret;
 }
 
-/* Board IRQ table used by the QDI P6I845/P2D/533 (PlatiniX 2D/533) */
-/* To add a device: -device rtl8139,bus=pci.2,addr=08.0 will place an RTL8139 on Slot 1 */
-static int platinix_slots_get_pirq(PCIDevice *pci_dev, int pin)
-{
-    int ret = 0;
-
-    switch (PCI_SLOT(pci_dev->devfn)) {
-        case 0x08: /* Slot 1 */
-            ret = (0x7654 >> (pin * 4)) & 7;
-        break;
-
-        case 0x09: /* Slot 2 */
-            ret = (0x4765 >> (pin * 4)) & 7;
-        break;
-
-        case 0x0a: /* Slot 3 */
-            ret = (0x5476 >> (pin * 4)) & 7;
-        break;
-
-        case 0x0b: /* Slot 4 */
-            ret = (0x6547 >> (pin * 4)) & 7;
-        break;
-
-        case 0x0c: /* Slot 5 */
-            ret = (0x7654 >> (pin * 4)) & 7;
-        break;
-
-        case 0x0d: /* Slot 6 */
-            ret = (0x4765 >> (pin * 4)) & 7;
-        break;
-
-        case 0x06: /* CNR Slot. Preferably avoid */
-            ret = (0x1032 >> (pin * 4)) & 7;
-        break;
-
-        default:
-            ret = (0x3210 >> (pin * 4)) & 7;
-        break;
-    }
-
-    return ret;
-}
-
 /* PC hardware initialisation */
-static void pc_brookdale_common_init(MachineState *machine, uint16_t ac97_vendor, uint16_t ac97_device, int hub_pin(PCIDevice *pci_dev, int pin))
+static void pc_init(MachineState *machine)
 {
     PCMachineState *pcms = PC_MACHINE(machine);
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
@@ -318,7 +275,7 @@ static void pc_brookdale_common_init(MachineState *machine, uint16_t ac97_vendor
 
     pci_bridge_dev = pci_new(PCI_DEVFN(0x1e, 0), "ich2-pci-bridge");
     pci_bridge = PCI_BRIDGE(pci_bridge_dev);
-    pci_bridge_map_irq(pci_bridge, "pci.2", hub_pin);
+    pci_bridge_map_irq(pci_bridge, "pci.2", pci_slots_get_pirq);
     pci_realize_and_unref(pci_bridge_dev, pcms->pcibus, &error_fatal);
 
     fprintf(stderr, "PC: Setting up USB\n");
@@ -328,8 +285,9 @@ static void pc_brookdale_common_init(MachineState *machine, uint16_t ac97_vendor
     fprintf(stderr, "PC: Setting up AC97\n");
     ac97 = pci_new(PCI_DEVFN(0x1f, 5), "AC97");
 
-    qdev_prop_set_uint16(DEVICE(ac97), "ac97-vendor", ac97_vendor);
-    qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", ac97_device);
+    /* Realtek ALC201A */
+    qdev_prop_set_uint16(DEVICE(ac97), "ac97-vendor", 0x414c);
+    qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", 0x4710);
 
     pci_realize_and_unref(ac97, pcms->pcibus, &error_fatal);
 
@@ -351,10 +309,15 @@ static void pc_brookdale_common_init(MachineState *machine, uint16_t ac97_vendor
     fprintf(stderr, "PC: Passing control to the BIOS\n");
 }
 
-static void pc_machine_options(MachineClass *m)
+#define DEFINE_BROOKDALE_MACHINE(major, minor) \
+    DEFINE_PC_VER_MACHINE(pc_brookdale, "pc-brookdale", pc_init, false, NULL, major, minor);
+
+#define DEFINE_BROOKDALE_MACHINE_AS_LATEST(major, minor) \
+    DEFINE_PC_VER_MACHINE(pc_brookdale, "pc-brookdale", pc_init, true, "brookdale", major, minor);
+
+static void pc_brookdale_machine_options(MachineClass *m)
 {
     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
-
     pcmc->pci_enabled = true;
     pcmc->has_acpi_build = false;
     pcmc->smbios_defaults = false;
@@ -364,6 +327,9 @@ static void pc_machine_options(MachineClass *m)
     pcmc->isa_bios_alias = false;
     pcmc->pvh_enabled = false;
     pcmc->kvmclock_create_always = true;
+
+    m->family = "pc_brookdale";
+    m->desc = "Standard PC (i845 + ICH2, 2001)";
     m->hotplug_allowed = false;
     m->auto_enable_numa_with_memhp = false;
     m->auto_enable_numa_with_memdev = false;
@@ -380,56 +346,9 @@ static void pc_machine_options(MachineClass *m)
     m->smp_props.cache_supported[CACHE_LEVEL_AND_TYPE_L3] = false;
 }
 
-/* AOpen AX4B-G2 */
-/* 6 Slots | Realtek ALC201 */
-static void pc_ax4b_init(MachineState *machine)
+static void pc_brookdale_machine_10_2_options(MachineClass *m)
 {
-    pc_brookdale_common_init(machine, 0x414c, 0x4710, ax4b_slots_get_pirq);
+    pc_brookdale_machine_options(m);
 }
 
-#define DEFINE_AX4B_MACHINE(major, minor) \
-    DEFINE_PC_VER_MACHINE(pc_ax4b, "pc-ax4b", pc_ax4b_init, false, NULL, major, minor);
-
-#define DEFINE_AX4B_MACHINE_AS_LATEST(major, minor) \
-    DEFINE_PC_VER_MACHINE(pc_ax4b, "pc-ax4b", pc_ax4b_init, true, "ax4b", major, minor);
-
-static void pc_ax4b_machine_options(MachineClass *m)
-{
-    m->family = "pc_ax4b";
-    m->desc = "AOpen AX4B-G2 (i845 + ICH2, 2001)";
-    pc_machine_options(m);
-}
-
-static void pc_ax4b_machine_10_2_options(MachineClass *m)
-{
-    pc_ax4b_machine_options(m);
-}
-
-DEFINE_AX4B_MACHINE_AS_LATEST(10, 2);
-
-/* QDI P6I845/P2D/533 (PlatiniX 2D/533) */
-/* 6 Slots | Crystal CS4297 */
-static void pc_platinix_init(MachineState *machine)
-{
-    pc_brookdale_common_init(machine, 0x4352, 0x5394, platinix_slots_get_pirq);
-}
-
-#define DEFINE_PLATINIX_MACHINE(major, minor) \
-    DEFINE_PC_VER_MACHINE(pc_platinix, "pc-platinix", pc_platinix_init, false, NULL, major, minor);
-
-#define DEFINE_PLATINIX_MACHINE_AS_LATEST(major, minor) \
-    DEFINE_PC_VER_MACHINE(pc_platinix, "pc-platinix", pc_platinix_init, true, "platinix", major, minor);
-
-static void pc_platinix_machine_options(MachineClass *m)
-{
-    m->family = "pc_platinix";
-    m->desc = "QDI Platinix 2D/533 (i845 + ICH2, 2002)";
-    pc_machine_options(m);
-}
-
-static void pc_platinix_machine_10_2_options(MachineClass *m)
-{
-    pc_platinix_machine_options(m);
-}
-
-DEFINE_PLATINIX_MACHINE_AS_LATEST(10, 2);
+DEFINE_BROOKDALE_MACHINE_AS_LATEST(10, 2);
