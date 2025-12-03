@@ -47,6 +47,8 @@
 #define KBD_CCMD_WRITE_MODE        0x60
 /* Get controller version */
 #define KBD_CCMD_GET_VERSION       0xA1
+/* Password Install */
+#define KBD_CCMD_PSW_INSTALL       0xA5
 /* Disable mouse interface */
 #define KBD_CCMD_MOUSE_DISABLE     0xA7
 /* Enable mouse interface */
@@ -273,7 +275,22 @@ static uint64_t kbd_read_status(void *opaque, hwaddr addr,
 {
     KBDState *s = opaque;
     int val;
-    val = s->status;
+
+    switch(s->write_cmd) {
+        case KBD_CCMD_GET_VERSION:
+            val = 0xff;
+            s->write_cmd = 0x00;
+        break;
+
+        case KBD_CCMD_PSW_INSTALL:
+            val = 0x01;
+        break;
+
+        default:
+            val = s->status;
+        break;
+    }
+
     trace_pckbd_kbd_read_status(val);
     return val;
 }
@@ -339,6 +356,8 @@ static void kbd_write_command(void *opaque, hwaddr addr,
         kbd_queue(s, s->mode, 0);
         break;
     case KBD_CCMD_WRITE_MODE:
+    case KBD_CCMD_GET_VERSION:
+    case KBD_CCMD_PSW_INSTALL:
     case KBD_CCMD_WRITE_OBUF:
     case KBD_CCMD_WRITE_AUX_OBUF:
     case KBD_CCMD_WRITE_MOUSE:
@@ -415,6 +434,9 @@ static uint64_t kbd_read_data(void *opaque, hwaddr addr,
         }
     }
 
+    if(s->write_cmd == KBD_CCMD_PSW_INSTALL)
+        s->obdata = 0xf1;
+
     trace_pckbd_kbd_read_data(s->obdata);
     return s->obdata;
 }
@@ -466,7 +488,9 @@ static void kbd_write_data(void *opaque, hwaddr addr,
     default:
         break;
     }
-    s->write_cmd = 0;
+    
+    if(s->write_cmd != KBD_CCMD_PSW_INSTALL)
+        s->write_cmd = 0;
 }
 
 static void kbd_reset(void *opaque)

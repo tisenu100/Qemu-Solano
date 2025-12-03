@@ -279,8 +279,10 @@ static void pc_init(MachineState *machine)
     pci_realize_and_unref(pci_bridge_dev, pcms->pcibus, &error_fatal);
 
     fprintf(stderr, "PC: Setting up USB\n");
-    pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 2), TYPE_ICH2_USB_UHCI1);
-    pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 4), TYPE_ICH2_USB_UHCI2);
+    pci_create_simple_multifunction(pcms->pcibus, PCI_DEVFN(0x1d, 0), TYPE_ICH2_USB_UHCI1);
+    pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1d, 1), TYPE_ICH2_USB_UHCI2);
+    pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1d, 2), TYPE_ICH2_USB_UHCI1);
+    pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1d, 7), "usb-ehci");
 
     fprintf(stderr, "PC: Setting up AC97\n");
     ac97 = pci_new(PCI_DEVFN(0x1f, 5), "AC97");
