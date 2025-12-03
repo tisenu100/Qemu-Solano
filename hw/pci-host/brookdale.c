@@ -103,7 +103,7 @@ static void i845_write_config(PCIDevice *dev, uint32_t address, uint32_t val, in
     PCII845State *d = I845_PCI_DEVICE(dev);
     
     switch(address) {
-        case 0x86: case 0x8c: case 0x8d: case 0x8e:
+        case 0x57: case 0x86: case 0x8c: case 0x8d: case 0x8e:
         case 0x8f: case 0xa0: case 0xa1: case 0xa2:
         case 0xa3: case 0xa4: case 0xa5: case 0xa6:
         case 0xa7:

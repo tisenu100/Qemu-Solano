@@ -65,6 +65,8 @@
 #define KBD_CCMD_KBD_ENABLE        0xAE
 /* read input port */
 #define KBD_CCMD_READ_INPORT       0xC0
+/* read mode */
+#define KBD_CCMD_READ_MODE_AMI     0xCA
 /* read output port */
 #define KBD_CCMD_READ_OUTPORT      0xD0
 /* write output port */
@@ -286,6 +288,10 @@ static uint64_t kbd_read_status(void *opaque, hwaddr addr,
             val = 0x01;
         break;
 
+        case KBD_CCMD_READ_MODE_AMI:
+            val = 0x01;
+        break;
+
         default:
             val = s->status;
         break;
@@ -358,6 +364,7 @@ static void kbd_write_command(void *opaque, hwaddr addr,
     case KBD_CCMD_WRITE_MODE:
     case KBD_CCMD_GET_VERSION:
     case KBD_CCMD_PSW_INSTALL:
+    case KBD_CCMD_READ_MODE_AMI:
     case KBD_CCMD_WRITE_OBUF:
     case KBD_CCMD_WRITE_AUX_OBUF:
     case KBD_CCMD_WRITE_MOUSE:
