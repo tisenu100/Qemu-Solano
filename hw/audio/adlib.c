@@ -25,8 +25,8 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
-#include "hw/audio/model.h"
-#include "qemu/audio.h"
+#include "hw/audio/soundhw.h"
+#include "audio/audio.h"
 #include "hw/isa/isa.h"
 #include "hw/qdev-properties.h"
 #include "qemu/error-report.h"
@@ -34,9 +34,12 @@
 
 #define DEBUG 0
 
-#define ADLIB_KILL_TIMERS 1
+#define ADLIB_KILL_TIMERS 0
 
-#define ADLIB_DESC "Yamaha YM3812 (OPL2)"
+#define HAS_YMF262 1
+#define OPL2_ONLY 0 
+
+#define ADLIB_DESC "Yamaha YM3812/YMF262 (OPL2/OPL3)"
 
 #if DEBUG
 #include "qemu/timer.h"
@@ -48,8 +51,14 @@
         } \
     } while (0)
 
+#if HAS_YMF262
+#include "ymf262.h"
+#include "stdtype.h"
+#define SHIFT 2
+#else
 #include "fmopl.h"
 #define SHIFT 1
+#endif
 
 #define TYPE_ADLIB "adlib"
 OBJECT_DECLARE_SIMPLE_TYPE(AdlibState, ADLIB)
@@ -57,7 +66,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(AdlibState, ADLIB)
 struct AdlibState {
     ISADevice parent_obj;
 
-    AudioBackend *audio_be;
+    QEMUSoundCard card;
     uint32_t freq;
     uint32_t port;
     int ticking[2];
@@ -72,16 +81,25 @@ struct AdlibState {
     SWVoiceOut *voice;
     int left, pos, samples;
     QEMUAudioTimeStamp ats;
+#if OPL2_ONLY
     FM_OPL *opl;
+#endif
+#if HAS_YMF262
+    void *ymf262;
+#endif
     PortioList port_list;
 };
 
 static void adlib_stop_opl_timer (AdlibState *s, size_t n)
 {
+
+#if HAS_YMF262
+	ymf262_timer_over(s->ymf262,n);
+#else
     OPLTimerOver (s->opl, n);
     s->ticking[n] = 0;
+#endif   
 }
-
 static void adlib_kill_timers (AdlibState *s)
 {
     size_t i;
@@ -115,7 +133,11 @@ static void adlib_write(void *opaque, uint32_t nport, uint32_t val)
 
     adlib_kill_timers (s);
 
+#if HAS_YMF262
+    ymf262_write (s->ymf262,a,val);
+#else
     OPLWrite (s->opl, a, val);
+#endif
 }
 
 static uint32_t adlib_read(void *opaque, uint32_t nport)
@@ -124,19 +146,25 @@ static uint32_t adlib_read(void *opaque, uint32_t nport)
     int a = nport & 3;
 
     adlib_kill_timers (s);
+
+#if HAS_YMF262
+    return ymf262_read (s->ymf262,a);
+#else
     return OPLRead (s->opl, a);
+#endif
 }
 
-static void timer_handler (void *opaque, int c, double interval_Sec)
+static void timer_handler (void *opaque, UINT8 timer, UINT32 period)
 {
     AdlibState *s = opaque;
-    unsigned n = c & 1;
+    uint64_t interval_us = (uint64_t)((double)period * 1000000.0 / 49716.0);
+    unsigned n = timer & 1;
 #if DEBUG
     double interval;
     int64_t exp;
 #endif
 
-    if (interval_Sec == 0.0) {
+    if (interval_us == 0.0) {
         s->ticking[n] = 0;
         return;
     }
@@ -148,7 +176,7 @@ static void timer_handler (void *opaque, int c, double interval_Sec)
     s->exp[n] = exp;
 #endif
 
-    s->dexp[n] = interval_Sec * 1000000.0;
+    s->dexp[n] = interval_us;
     AUD_init_time_stamp_out (s->voice, &s->ats);
 }
 
@@ -213,33 +241,45 @@ static void adlib_callback (void *opaque, int free)
         return;
     }
 
-    YM3812UpdateOne (s->opl, s->mixbuf + s->pos, samples);
-
-    while (samples) {
-        written = write_audio (s, samples);
-
-        if (written) {
-            samples -= written;
-            s->pos = (s->pos + written) % s->samples;
+#if HAS_YMF262
+    {
+        DEV_SMPL *bufs[2];
+        DEV_SMPL *lbuf = g_new(DEV_SMPL, samples);
+        DEV_SMPL *rbuf = g_new(DEV_SMPL, samples);
+        int i;
+        bufs[0] = lbuf;
+        bufs[1] = rbuf;
+        ymf262_update_one(s->ymf262, samples, bufs);
+        for (i = 0; i < samples; i++) {
+            ((int16_t *)s->mixbuf)[(s->pos + i) * 2 + 0] = (int16_t)lbuf[i];
+            ((int16_t *)s->mixbuf)[(s->pos + i) * 2 + 1] = (int16_t)rbuf[i];
         }
-        else {
-            s->left = samples;
-            return;
-        }
+        g_free(lbuf);
+        g_free(rbuf);
     }
+#else
+    YM3812UpdateOne (s->opl, s->mixbuf + s->pos, samples);
+#endif
+    written = write_audio (s, samples);
+    s->pos = (s->pos + written) % s->samples;
+    s->left = samples - written;
 }
 
 static void Adlib_fini (AdlibState *s)
 {
+#if HAS_YMF262
+	ymf262_shutdown(s->ymf262);
+#else
     if (s->opl) {
         OPLDestroy (s->opl);
         s->opl = NULL;
     }
-
+#endif
     g_free(s->mixbuf);
 
     s->active = 0;
     s->enabled = 0;
+    AUD_remove_card (&s->card);
 }
 
 static MemoryRegionPortio adlib_portio_list[] = {
@@ -254,10 +294,19 @@ static void adlib_realizefn (DeviceState *dev, Error **errp)
     AdlibState *s = ADLIB(dev);
     struct audsettings as;
 
-    if (!AUD_backend_check(&s->audio_be, errp)) {
+    if (!AUD_register_card ("adlib", &s->card, errp)) {
         return;
     }
-
+#if HAS_YMF262
+    s->ymf262 = ymf262_init (14318180, s->freq);
+	if (!s->ymf262){
+        error_setg (errp, "YMF262Init failed\n");
+        return;
+    }
+        ymf262_reset_chip (s->ymf262);
+        ymf262_set_timer_handler (s->ymf262, timer_handler, s);
+        s->enabled = 1;
+#else
     s->opl = OPLCreate (3579545, s->freq);
     if (!s->opl) {
         error_setg (errp, "OPLCreate %d failed", s->freq);
@@ -267,14 +316,14 @@ static void adlib_realizefn (DeviceState *dev, Error **errp)
         OPLSetTimerHandler(s->opl, timer_handler, s);
         s->enabled = 1;
     }
-
+#endif
     as.freq = s->freq;
     as.nchannels = SHIFT;
     as.fmt = AUDIO_FORMAT_S16;
-    as.endianness = HOST_BIG_ENDIAN;
+    as.endianness = AUDIO_HOST_ENDIANNESS;
 
     s->voice = AUD_open_out (
-        s->audio_be,
+        &s->card,
         s->voice,
         "adlib",
         s,
@@ -297,15 +346,15 @@ static void adlib_realizefn (DeviceState *dev, Error **errp)
 }
 
 static const Property adlib_properties[] = {
-    DEFINE_AUDIO_PROPERTIES(AdlibState, audio_be),
+    DEFINE_AUDIO_PROPERTIES(AdlibState, card),
     DEFINE_PROP_UINT32 ("iobase",  AdlibState, port, 0x220),
-    DEFINE_PROP_UINT32 ("freq",    AdlibState, freq,  44100),
+    DEFINE_PROP_UINT32 ("freq",    AdlibState, freq,  48000),
 };
 
 static void adlib_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS (klass);
-
+    OPL3_LockTable();
     dc->realize = adlib_realizefn;
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     dc->desc = ADLIB_DESC;
@@ -322,7 +371,7 @@ static const TypeInfo adlib_info = {
 static void adlib_register_types (void)
 {
     type_register_static (&adlib_info);
-    audio_register_model("adlib", ADLIB_DESC, TYPE_ADLIB);
+    deprecated_register_soundhw("adlib", ADLIB_DESC, 1, TYPE_ADLIB);
 }
 
 type_init (adlib_register_types)
