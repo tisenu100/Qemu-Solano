@@ -201,12 +201,12 @@ static void control (SB16State *s, int hold)
 
     if (hold) {
 	if (!s->voice) {
-        k->hold_DREQ(s, nchan);
+        hold_DREQ(s, nchan);
 	}
         AUD_set_active_out (s->voice, 1);
     }
     else {
-        k->release_DREQ(s, nchan);
+        release_DREQ(s, nchan);
         AUD_set_active_out (s->voice, 0);
     }
 }
