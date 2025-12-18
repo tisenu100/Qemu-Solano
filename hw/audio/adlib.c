@@ -41,9 +41,8 @@
 
 #define ADLIB_DESC "Yamaha YM3812/YMF262 (OPL2/OPL3)"
 
-#if DEBUG
 #include "qemu/timer.h"
-#endif
+
 
 #define ldebug(fmt, ...) do { \
         if (DEBUG) { \
@@ -127,10 +126,10 @@ static void adlib_write(void *opaque, uint32_t nport, uint32_t val)
 {
     AdlibState *s = opaque;
     int a = nport & 3;
-
+if (!s->active){
     s->active = 1;
     AUD_set_active_out (s->voice, 1);
-
+}
     adlib_kill_timers (s);
 
 #if HAS_YMF262
@@ -157,7 +156,7 @@ static uint32_t adlib_read(void *opaque, uint32_t nport)
 static void timer_handler (void *opaque, UINT8 timer, UINT32 period)
 {
     AdlibState *s = opaque;
-    uint64_t interval_us = (uint64_t)((double)period * 1000000.0 / 49716.0);
+    uint64_t interval_us = (uint64_t)((double)period * (QEMU_CLOCK_VIRTUAL) / 49716.0);
     unsigned n = timer & 1;
 #if DEBUG
     double interval;
