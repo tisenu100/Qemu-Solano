@@ -155,6 +155,22 @@ static int irq_of_magic (int magic)
     }
 }
 
+static void hold_DREQ(SB16State *s, int nchan)
+{
+    IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
+    IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
+
+    k->hold_DREQ(isa_dma, nchan);
+}
+
+static void release_DREQ(SB16State *s, int nchan)
+{
+    IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
+    IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
+
+    k->release_DREQ(isa_dma, nchan);
+}
+
 #if 0
 static void log_dsp (SB16State *dsp)
 {
@@ -178,19 +194,19 @@ static void speaker (SB16State *s, int on)
 
 static void control (SB16State *s, int hold)
 {
-    int dma = s->use_hdma ? s->hdma : s->dma;
-    IsaDma *isa_dma = s->use_hdma ? s->isa_hdma : s->isa_dma;
-    IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
+    int nchan = s->use_hdma ? s->hdma : s->dma;
     s->dma_running = hold;
 
-    ldebug("hold %d high %d dma %d", hold, s->use_hdma, dma);
+    ldebug("hold %d high %d nchan %d\n", hold, s->use_hdma, nchan);
 
     if (hold) {
-        k->hold_DREQ(isa_dma, dma);
+	if (!s->voice) {
+        k->hold_DREQ(s, nchan);
+	}
         AUD_set_active_out (s->voice, 1);
     }
     else {
-        k->release_DREQ(isa_dma, dma);
+        k->release_DREQ(s, nchan);
         AUD_set_active_out (s->voice, 0);
     }
 }
@@ -874,6 +890,8 @@ static void legacy_reset (SB16State *s)
     s->fmt_bits = 8;
     s->fmt_stereo = 0;
 
+    s->audio_free = 0;
+
     as.freq = s->freq;
     as.nchannels = 1;
     as.fmt = AUDIO_FORMAT_U8;
@@ -1229,12 +1247,15 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
     }
 
     if (s->voice) {
-        free = s->audio_free & ~s->align;
-        if ((free <= 0) || !dma_len) {
+	if (!dma_len) {
             return dma_pos;
         }
-    }
-    else {
+        free = s->audio_free & ~s->align;
+        if (free <= 0) {
+            release_DREQ(s, nchan);
+            return dma_pos;
+        }
+    } else {
         free = dma_len;
     }
 
@@ -1255,7 +1276,7 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
     written = write_audio (s, nchan, dma_pos, dma_len, copy);
     dma_pos = (dma_pos + written) % dma_len;
     s->left_till_irq -= written;
-
+    s->audio_free -= written;
     if (s->left_till_irq <= 0) {
         s->mixer_regs[0x82] |= (nchan & 4) ? 2 : 1;
         qemu_irq_raise (s->pic);
@@ -1274,14 +1295,22 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
     while (s->left_till_irq <= 0) {
         s->left_till_irq = s->block_size + s->left_till_irq;
     }
-
+    if (s->voice) {
+        free = s->audio_free & ~s->align;
+        if (free <= 0) {
+            release_DREQ(s, nchan);
+        }
+    }
     return dma_pos;
 }
 
 static void SB_audio_callback (void *opaque, int free)
 {
     SB16State *s = opaque;
+    int nchan = s->use_hdma ? s->hdma : s->dma;
     s->audio_free = free;
+    /* run the DMA engine to call SB_read_DMA immediately */
+    hold_DREQ(s, nchan);
 }
 
 static int sb16_post_load (void *opaque, int version_id)
