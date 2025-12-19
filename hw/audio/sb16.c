@@ -208,12 +208,11 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
     SB16State *s = opaque;
     uint32_t a = nport & 3;
     
-	if ((nport & 0xF) == 8) a = 0;
-        if ((nport & 0xF) == 9) a = 1;
-/*    if ((nport & 0xf00) != 0x300) {
-        
+    if ((nport & 0xf00) != 0x300) {
+        if ((nport & 0xF) == 8) a = 0;
+	if ((nport & 0xF) == 9) a = 1;
     }
-  */  
+  
     sb16_check_opl_timers(s);
     if (s->voice_opl) {
         AUD_set_active_out(s->voice_opl, 1);
