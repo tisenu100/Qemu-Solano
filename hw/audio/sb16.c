@@ -114,6 +114,7 @@ struct SB16State {
     uint64_t opl_dexp[2];
     QEMUAudioTimeStamp opl_ats;
     PortioList opl_portio_list;
+    PortioList hack_portio_list;
 
     QEMUTimer *aux_ts;
     /* mixer state */
@@ -125,7 +126,7 @@ struct SB16State {
 };
 
 #define SAMPLE_RATE_MIN 5000
-#define SAMPLE_RATE_MAX 45000
+#define SAMPLE_RATE_MAX 49716
 
 static void sb16_update_opl_volume(SB16State *s)
 {
@@ -174,8 +175,9 @@ static void sb16_opl_callback(void *opaque, int free)
 static void sb16_opl_timer_handler(void *opaque, UINT8 c, UINT32 period)
 {
     SB16State *s = opaque;
-    
-    uint64_t interval_ns = (uint64_t)((double)period * (QEMU_CLOCK_VIRTUAL) / 49716.0);
+    int64_t fuck = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+    uint64_t interval_ns = (uint64_t)((double)period * NANOSECONDS_PER_SECOND / 49716.0);
     unsigned n = c & 1;
 
     if (interval_ns == 0) {
@@ -184,20 +186,19 @@ static void sb16_opl_timer_handler(void *opaque, UINT8 c, UINT32 period)
     }
 
     s->opl_ticking[n] = 1;
-    s->opl_dexp[n] = interval_ns / 1000;
-    AUD_init_time_stamp_out(s->voice_opl, &s->opl_ats);
+    s->opl_dexp[n] = fuck + interval_ns;
 }
 
 static void sb16_check_opl_timers(SB16State *s)
 {
+    int64_t fuck = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     int i;
     for (i = 0; i < 2; ++i) {
-        if (s->opl_ticking[i]) {
+        if (s->opl_ticking[i] && fuck >= s->opl_dexp[i]) {
             uint64_t delta = AUD_get_elapsed_usec_out(s->voice_opl, &s->opl_ats);
             if (delta >= s->opl_dexp[i]) {
-                ymf262_timer_over(s->ymf262, i);
                 s->opl_ticking[i] = 0;
-                AUD_init_time_stamp_out(s->voice_opl, &s->opl_ats);
+		ymf262_timer_over(s->ymf262, i);
             }
         }
     }
@@ -217,6 +218,9 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
     if (s->voice_opl) {
         AUD_set_active_out(s->voice_opl, 1);
     }
+    ymf262_timer_over(s->ymf262, 0); 
+    ymf262_timer_over(s->ymf262, 1);
+    
     ymf262_write(s->ymf262, a, val);
 }
 
@@ -229,6 +233,9 @@ static uint32_t sb16_opl_read(void *opaque, uint32_t nport)
         if ((nport & 0xF) == 9) a = 1;
     }
     sb16_check_opl_timers(s);
+    ymf262_timer_over(s->ymf262, 0); 
+    ymf262_timer_over(s->ymf262, 1);
+
     return ymf262_read(s->ymf262, a);
 }
 
@@ -302,7 +309,7 @@ static void log_dsp (SB16State *dsp)
 static void speaker (SB16State *s, int on)
 {
     s->speaker = on;
-    /* AUD_enable (s->voice, on); */
+    /*AUD_enable (s->voice, on);*/
 }
 
 static void control (SB16State *s, int hold)
@@ -1536,19 +1543,17 @@ static const VMStateDescription vmstate_sb16 = {
     }
 };
 
-static const MemoryRegionPortio sb16_ioport_list[] = {
-    {  0, 4, 1, .read = sb16_opl_read, .write = sb16_opl_write },
+static MemoryRegionPortio sb16_ioport_list[] = {
     {  4, 1, 1, .write = mixer_write_indexb },
     {  5, 1, 1, .read = mixer_read, .write = mixer_write_datab },
     {  6, 1, 1, .read = dsp_read, .write = dsp_write },
-    {  8, 2, 1, .read = sb16_opl_read, .write = sb16_opl_write },
     { 10, 1, 1, .read = dsp_read },
     { 12, 1, 1, .write = dsp_write },
     { 12, 4, 1, .read = dsp_read },
     PORTIO_END_OF_LIST (),
 };
 
-static const MemoryRegionPortio sb16_opl_portio_list[] = {
+static MemoryRegionPortio opl_portio_list[] = {
     { 0, 4, 1, .read = sb16_opl_read, .write = sb16_opl_write },
     PORTIO_END_OF_LIST (),
 };
@@ -1590,17 +1595,18 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     s->csp_regs[9] = 0xf8;
 
     OPL3_LockTable();
-    s->ymf262 = ymf262_init(14318180, 44100);
+    s->ymf262 = ymf262_init(14318180, 48000);
     if (s->ymf262) {
         ymf262_reset_chip(s->ymf262);
         ymf262_set_timer_handler(s->ymf262, sb16_opl_timer_handler, s);
-        as.freq = 44100;
+        as.freq = 48000;
         as.nchannels = 2;
         as.fmt = AUDIO_FORMAT_S16;
         as.endianness = 0;
         s->voice_opl = AUD_open_out(s->audio_be, s->voice_opl, "sb16-opl", s, sb16_opl_callback, &as);
         AUD_set_active_out(s->voice_opl, 1);
-        isa_register_portio_list(isadev, &s->opl_portio_list, 0x388, sb16_opl_portio_list, s, "sb16-opl");
+	isa_register_portio_list(isadev, &s->opl_portio_list, s->port, opl_portio_list, s, "sb16-opl");
+	isa_register_portio_list(isadev, &s->hack_portio_list, 0x388, opl_portio_list, s, "sb16-opl");
     }
 
     reset_mixer (s);

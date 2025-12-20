@@ -1716,14 +1716,14 @@ static void OPL3WriteReg(OPL3 *chip, int r, int v)
 				{
 					//attotime period = st2 ? attotime_mul(chip->TimerBase, chip->T[1]) : attotime_zero;
 					chip->st[1] = st2;
-					//if (chip->timer_handler) (chip->timer_handler)(chip->TimerParam,1,period);
+					if (chip->timer_handler) (chip->timer_handler)(chip->TimerParam,1,chip->T[1]);
 				}
 				/* timer 1 */
 				if(chip->st[0] != st1)
 				{
 					//attotime period = st1 ? attotime_mul(chip->TimerBase, chip->T[0]) : attotime_zero;
 					chip->st[0] = st1;
-					//if (chip->timer_handler) (chip->timer_handler)(chip->TimerParam,0,period);
+					if (chip->timer_handler) (chip->timer_handler)(chip->TimerParam,0,chip->T[0]);
 				}
 			}
 		break;
@@ -2382,7 +2382,7 @@ static UINT8 OPL3TimerOver(OPL3 *chip,UINT8 c)
 		OPL3_STATUS_SET(chip,0x40);
 	}
 	/* reload timer */
-	//if (chip->timer_handler) (chip->timer_handler)(chip->TimerParam,c,attotime_mul(chip->TimerBase, chip->T[c]));
+	if (chip->timer_handler) (chip->timer_handler)(chip->TimerParam,c,chip->T[c]);
 	return chip->status>>7;
 }
 
