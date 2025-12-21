@@ -1572,11 +1572,11 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     s->csp_regs[9] = 0xf8;
 
     OPL3_LockTable();
-    s->ymf262 = ymf262_init(14318180, 48000);
+    s->ymf262 = ymf262_init(14318180, 44100);
     if (s->ymf262) {
         ymf262_reset_chip(s->ymf262);
         ymf262_set_timer_handler(s->ymf262, sb16_opl_timer_handler, s);
-        as.freq = 48000;
+        as.freq = 44100;
         as.nchannels = 2;
         as.fmt = AUDIO_FORMAT_S16;
         as.endianness = 0;
