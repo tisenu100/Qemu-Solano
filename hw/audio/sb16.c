@@ -165,7 +165,6 @@ static void sb16_opl_callback(void *opaque, int free)
         }
 
         AUD_write(s->voice_opl, interleaved, bytes);
-
         g_free(buf_l);
         g_free(buf_r);
         g_free(interleaved);
@@ -189,21 +188,6 @@ static void sb16_opl_timer_handler(void *opaque, UINT8 c, UINT32 period)
     s->opl_dexp[n] = fuck + interval_ns;
 }
 
-static void sb16_check_opl_timers(SB16State *s)
-{
-    int64_t fuck = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    int i;
-    for (i = 0; i < 2; ++i) {
-        if (s->opl_ticking[i] && fuck >= s->opl_dexp[i]) {
-            uint64_t delta = AUD_get_elapsed_usec_out(s->voice_opl, &s->opl_ats);
-            if (delta >= s->opl_dexp[i]) {
-                s->opl_ticking[i] = 0;
-		ymf262_timer_over(s->ymf262, i);
-            }
-        }
-    }
-}
-
 static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
 {
     SB16State *s = opaque;
@@ -213,14 +197,10 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
         if ((nport & 0xF) == 8) a = 0;
 	if ((nport & 0xF) == 9) a = 1;
     }
-  
-    sb16_check_opl_timers(s);
     if (s->voice_opl) {
         AUD_set_active_out(s->voice_opl, 1);
     }
-    ymf262_timer_over(s->ymf262, 0); 
-    ymf262_timer_over(s->ymf262, 1);
-    
+    ymf262_timer_over(s->ymf262, a); 
     ymf262_write(s->ymf262, a, val);
 }
 
@@ -232,10 +212,7 @@ static uint32_t sb16_opl_read(void *opaque, uint32_t nport)
         if ((nport & 0xF) == 8) a = 0;
         if ((nport & 0xF) == 9) a = 1;
     }
-    sb16_check_opl_timers(s);
-    ymf262_timer_over(s->ymf262, 0); 
-    ymf262_timer_over(s->ymf262, 1);
-
+    ymf262_timer_over(s->ymf262, a); 
     return ymf262_read(s->ymf262, a);
 }
 
