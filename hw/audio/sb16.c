@@ -294,7 +294,7 @@ static void control (SB16State *s, int hold)
     int nchan = s->use_hdma ? s->hdma : s->dma;
     s->dma_running = hold;
 
-    ldebug("hold %d high %d nchan %d\n", hold, s->use_hdma, nchan);
+    //ldebug("hold %d high %d nchan %d\n", hold, s->use_hdma, nchan);
 
     if (hold) {
 	if (!s->voice) {
