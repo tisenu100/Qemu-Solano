@@ -27,7 +27,7 @@
 #ifndef QEMU_VMSTATE_H
 #define QEMU_VMSTATE_H
 
-#include "hw/vmstate-if.h"
+#include "hw/core/vmstate-if.h"
 
 typedef struct VMStateInfo VMStateInfo;
 typedef struct VMStateField VMStateField;
@@ -724,6 +724,15 @@ extern const VMStateInfo vmstate_info_qlist;
     .size       = (_size),                                           \
     .info       = &(_info),                                          \
     .flags      = VMS_BUFFER,                                        \
+    .offset     = offsetof(_state, _field),                          \
+}
+
+#define VMSTATE_BUFFER_POINTER_UNSAFE(_field, _state, _version, _size) { \
+    .name       = (stringify(_field)),                               \
+    .version_id = (_version),                                        \
+    .size       = (_size),                                           \
+    .info       = &vmstate_info_buffer,                              \
+    .flags      = VMS_BUFFER | VMS_POINTER,                          \
     .offset     = offsetof(_state, _field),                          \
 }
 

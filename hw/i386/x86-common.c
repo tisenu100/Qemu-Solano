@@ -37,8 +37,8 @@
 #include "target/i386/sev.h"
 
 #include "hw/acpi/cpu_hotplug.h"
-#include "hw/irq.h"
-#include "hw/loader.h"
+#include "hw/core/irq.h"
+#include "hw/core/loader.h"
 #include "multiboot.h"
 #include "elf.h"
 #include "standard-headers/asm-x86/bootparam.h"
@@ -654,7 +654,7 @@ void x86_load_linux(X86MachineState *x86ms,
     uint8_t header[8192], *setup, *kernel;
     hwaddr real_addr, prot_addr, cmdline_addr, initrd_addr = 0;
     FILE *f;
-    char *vmode;
+    const char *vmode;
     MachineState *machine = MACHINE(x86ms);
     struct setup_data *setup_data;
     const char *kernel_filename = machine->kernel_filename;

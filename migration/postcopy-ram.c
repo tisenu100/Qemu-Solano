@@ -30,7 +30,7 @@
 #include "system/system.h"
 #include "qemu/error-report.h"
 #include "trace.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "system/ramblock.h"
 #include "socket.h"
 #include "yank_functions.h"
@@ -1467,7 +1467,8 @@ retry:
 static int postcopy_temp_pages_setup(MigrationIncomingState *mis)
 {
     PostcopyTmpPage *tmp_page;
-    int err, i, channels;
+    int err;
+    unsigned i, channels;
     void *temp_page;
 
     if (migrate_postcopy_preempt()) {
@@ -1479,7 +1480,7 @@ static int postcopy_temp_pages_setup(MigrationIncomingState *mis)
     }
 
     channels = mis->postcopy_channels;
-    mis->postcopy_tmp_pages = g_malloc0_n(sizeof(PostcopyTmpPage), channels);
+    mis->postcopy_tmp_pages = g_new0(PostcopyTmpPage, channels);
 
     for (i = 0; i < channels; i++) {
         tmp_page = &mis->postcopy_tmp_pages[i];
@@ -1927,8 +1928,7 @@ postcopy_preempt_send_channel_done(MigrationState *s,
                                    QIOChannel *ioc, Error *local_err)
 {
     if (local_err) {
-        migrate_set_error(s, local_err);
-        error_free(local_err);
+        migrate_error_propagate(s, local_err);
     } else {
         migration_ioc_register_yank(ioc);
         s->postcopy_qemufile_src = qemu_file_new_output(ioc);
@@ -2162,7 +2162,7 @@ static void *postcopy_listen_thread(void *opaque)
              * exit depending on if postcopy-exit-on-error is true, but the
              * migration cannot be recovered.
              */
-            migrate_set_error(migr, local_err);
+            migrate_error_propagate(migr, error_copy(local_err));
             error_report_err(local_err);
             migrate_set_state(&mis->state, mis->state, MIGRATION_STATUS_FAILED);
             goto out;

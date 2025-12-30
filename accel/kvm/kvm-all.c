@@ -42,7 +42,7 @@
 #include "qemu/event_notifier.h"
 #include "qemu/main-loop.h"
 #include "trace.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qapi/visitor.h"
 #include "qapi/qapi-types-common.h"
 #include "qapi/qapi-visit-common.h"
@@ -53,7 +53,7 @@
 #include "system/dirtylimit.h"
 #include "qemu/range.h"
 
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "system/stats.h"
 
 /* This check must be after config-host.h is included */
@@ -3373,10 +3373,10 @@ int kvm_vm_ioctl(KVMState *s, unsigned long type, ...)
     trace_kvm_vm_ioctl(type, arg);
     accel_ioctl_begin();
     ret = ioctl(s->vmfd, type, arg);
-    accel_ioctl_end();
     if (ret == -1) {
         ret = -errno;
     }
+    accel_ioctl_end();
     return ret;
 }
 
@@ -3413,10 +3413,10 @@ int kvm_device_ioctl(int fd, unsigned long type, ...)
     trace_kvm_device_ioctl(fd, type, arg);
     accel_ioctl_begin();
     ret = ioctl(fd, type, arg);
-    accel_ioctl_end();
     if (ret == -1) {
         ret = -errno;
     }
+    accel_ioctl_end();
     return ret;
 }
 
