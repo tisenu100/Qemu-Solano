@@ -8,6 +8,6 @@ system_ss.add(when: 'CONFIG_PC87312', if_true: files('pc87312.c'))
 system_ss.add(when: 'CONFIG_PIIX', if_true: files('piix.c'))
 system_ss.add(when: 'CONFIG_SMC37C669', if_true: files('smc37c669-superio.c'))
 system_ss.add(when: 'CONFIG_VT82C686', if_true: files('vt82c686.c'))
-system_ss.add(when: 'CONFIG_W83627HF', if_true: files('w83627hf.c'))
+system_ss.add(when: 'CONFIG_LPC_SIO', if_true: files('lpc_sio.c'))
 
 specific_ss.add(when: 'CONFIG_LPC_ICH9', if_true: files('lpc_ich9.c'))

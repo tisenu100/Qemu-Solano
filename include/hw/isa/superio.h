@@ -56,6 +56,11 @@ struct ISASuperIOClass {
 
 #define TYPE_FDC37M81X_SUPERIO  "fdc37m81x-superio"
 #define TYPE_SMC37C669_SUPERIO  "smc37c669-superio"
-#define TYPE_WINBOND_W83627HF "w83627hf-superio"
+#define TYPE_LPC_SIO "lpc-sio"
+
+/* Predefined Super I/O configurations */
+extern void w83627hf_create(ISABus *bus); /* Winbond W83627HF */
+extern void smsc_lpc47m1xx_create(ISABus *bus); /* SMSC LPC47M1xx Series */
+extern void ite8712f_create(ISABus *bus); /* ITE 8712F*/
 
 #endif /* HW_ISA_SUPERIO_H */

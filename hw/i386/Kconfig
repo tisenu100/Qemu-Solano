@@ -103,7 +103,7 @@ config SOLANO
     select ICH2
     select IDE_ICH2
     select ICH2_SMBUS
-    select W83627HF
+    select LPC_SIO
     select SST_LPC
 
 config ISAPC

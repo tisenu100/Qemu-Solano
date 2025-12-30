@@ -27,7 +27,7 @@ config FDC37M81X
     bool
     select ISA_SUPERIO
 
-config W83627HF
+config LPC_SIO
     bool
     select ISA_SUPERIO
 
