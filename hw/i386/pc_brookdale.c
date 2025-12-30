@@ -246,7 +246,7 @@ static void pc_init(MachineState *machine)
 
     fprintf(stderr, "PC: Setting up the Super I/O\n");
     pc_basic_device_init_simple(pcms, isa_bus, x86ms->gsi);
-    isa_create_simple(isa_bus, TYPE_WINBOND_W83627HF);
+    w83627hf_create(isa_bus);
 
     fprintf(stderr, "PC: Setting up IDE\n");
     ide_pci_dev = pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 1), TYPE_ICH2_IDE_PCI_DEVICE);
