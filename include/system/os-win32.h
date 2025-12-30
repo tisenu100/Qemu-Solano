@@ -140,10 +140,6 @@ static inline void os_setup_limits(void)
 
 int qemu_ftruncate64(int, int64_t);
 
-#if !defined(ftruncate)
-# define ftruncate qemu_ftruncate64
-#endif
-
 static inline char *realpath(const char *path, char *resolved_path)
 {
     _fullpath(resolved_path, path, _MAX_PATH);
