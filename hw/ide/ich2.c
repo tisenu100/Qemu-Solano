@@ -29,7 +29,7 @@
 #include "qemu/qemu-print.h"
 #include "qapi/error.h"
 #include "hw/pci/pci.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "hw/southbridge/ich2.h"
 #include "hw/ide/pci.h"
 #include "ide-internal.h"
