@@ -33,7 +33,7 @@
 #include "hw/char/serial-isa.h"
 #include "hw/isa/isa.h"
 #include "hw/isa/superio.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "system/blockdev.h"
 
