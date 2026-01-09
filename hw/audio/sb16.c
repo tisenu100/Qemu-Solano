@@ -3,6 +3,8 @@
  *
  * Copyright (c) 2003-2005 Vassili Karpov (malc)
  *
+ * Modified by re9177 2025-2026.
+ * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -108,6 +110,9 @@ struct SB16State {
     int audio_free;
     SWVoiceOut *voice;
     
+    int32_t adpcm_valpred;
+    int32_t adpcm_index;
+
     void *ymf262;
     SWVoiceOut *voice_opl;
     int opl_ticking[2];
@@ -115,6 +120,9 @@ struct SB16State {
     QEMUAudioTimeStamp opl_ats;
     PortioList opl_portio_list;
     PortioList hack_portio_list;
+
+    /* evil */
+    PortioList mpu_portio_list;
 
     QEMUTimer *aux_ts;
     /* mixer state */
@@ -128,17 +136,42 @@ struct SB16State {
 #define SAMPLE_RATE_MIN 5000
 #define SAMPLE_RATE_MAX 49716
 
+/* Get your FREE tables! */
+static const uint8_t sb16_log_vol[32] = {
+    0,   2,   5,   8,   12,  16,  20,  25,
+    31,  38,  46,  54,  63,  73,  84,  96,
+    108, 122, 136, 152, 168, 185, 203, 222,
+    242, 255, 255, 255, 255, 255, 255, 255
+};
+
+static void sb16_update_voice_volume(SB16State *s)
+{
+    if (!s->voice) return;
+
+    int ml_idx = (s->mixer_regs[0x30] >> 3) & 0x1f;
+    int mr_idx = (s->mixer_regs[0x31] >> 3) & 0x1f;
+    int vl_idx = (s->mixer_regs[0x32] >> 3) & 0x1f;
+    int vr_idx = (s->mixer_regs[0x33] >> 3) & 0x1f;
+
+    Volume vol;
+    vol.mute = 0;
+    vol.channels = 2;
+
+    vol.vol[0] = (sb16_log_vol[ml_idx] * sb16_log_vol[vl_idx] * 192) / 65025;
+    vol.vol[1] = (sb16_log_vol[mr_idx] * sb16_log_vol[vr_idx] * 192) / 65025;
+
+    AUD_set_volume_out(s->voice, &vol);
+}
+
 static void sb16_update_opl_volume(SB16State *s)
 {
-    uint8_t master = s->mixer_regs[0x22];
-    uint8_t fm = s->mixer_regs[0x26];
-    int master_l = (master >> 5) & 7;
-    int master_r = (master >> 1) & 7;
-    int fm_l = (fm >> 5) & 7;
-    int fm_r = (fm >> 1) & 7;
+    int ml_idx = (s->mixer_regs[0x30] >> 3) & 0x1f;
+    int mr_idx = (s->mixer_regs[0x31] >> 3) & 0x1f;
+    int fl_idx = (s->mixer_regs[0x34] >> 3) & 0x1f;
+    int fr_idx = (s->mixer_regs[0x35] >> 3) & 0x1f;
 
-    int32_t vol_l = (fm_l * master_l * 0x10000) / 49;
-    int32_t vol_r = (fm_r * master_r * 0x10000) / 49;
+    int32_t vol_l = (sb16_log_vol[ml_idx] * sb16_log_vol[fl_idx] * 0x8000) / 65025;
+    int32_t vol_r = (sb16_log_vol[mr_idx] * sb16_log_vol[fr_idx] * 0x8000) / 65025;
 
     if (s->ymf262) {
         ymf262_set_vol_lr(s->ymf262, vol_l, vol_r);
@@ -150,6 +183,10 @@ static void sb16_opl_callback(void *opaque, int free)
     SB16State *s = opaque;
     int samples = free >> 2;
     
+    if (!s->ymf262 || !s->voice_opl) {
+        return;
+    }
+
     if (samples > 0 && s->ymf262) {
         int bytes = samples * 4;
         DEV_SMPL *buf_l = g_new(DEV_SMPL, samples);
@@ -214,6 +251,21 @@ static uint32_t sb16_opl_read(void *opaque, uint32_t nport)
     }
     ymf262_timer_over(s->ymf262, a); 
     return ymf262_read(s->ymf262, a);
+}
+
+static void mpu_write(void *opaque, uint32_t addr, uint32_t val)
+{
+    /* stub!! for now :) */
+    ldebug("MPU-401 write addr 0x%x <- 0x%x", addr, val);
+}
+
+static uint32_t mpu_read(void *opaque, uint32_t addr)
+{
+    if ((addr & 1) == 1) {
+        return 0x3F; /* FIXME: this is not good, what's being done is that the sound card is told that there's a device ready even if there isn't one, although this seems to satisfy the 1992 Win3.1 drivers so.. i guess it's fine then? */
+    }
+
+    return 0xff;
 }
 
 static void SB_audio_callback (void *opaque, int free);
@@ -338,6 +390,7 @@ static void continue_dma8 (SB16State *s)
             SB_audio_callback,
             &as
             );
+	sb16_update_voice_volume(s);
     }
 
     control (s, 1);
@@ -501,6 +554,7 @@ static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
             SB_audio_callback,
             &as
             );
+	sb16_update_voice_volume(s);
     }
 
     control (s, 1);
@@ -532,9 +586,9 @@ static void command (SB16State *s, uint8_t cmd)
 
     if (cmd > 0xaf && cmd < 0xd0) {
         if (cmd & 8) {
-            qemu_log_mask(LOG_UNIMP, "ADC not yet supported (command 0x%x)\n",
-                          cmd);
+            ldebug("ADC command 0x%x is being used!!", cmd);
         }
+        s->needed_bytes = 3;
 
         switch (cmd >> 4) {
         case 11:
@@ -579,7 +633,7 @@ static void command (SB16State *s, uint8_t cmd)
 
         case 0x10:
             s->needed_bytes = 1;
-            goto warn;
+            break;
 
         case 0x14:
             s->needed_bytes = 2;
@@ -628,37 +682,20 @@ static void command (SB16State *s, uint8_t cmd)
             break;
 
         case 0x74:
-            s->needed_bytes = 2; /* DMA DAC, 4-bit ADPCM */
-            qemu_log_mask(LOG_UNIMP, "0x75 - DMA DAC, 4-bit ADPCM not"
-                          " implemented\n");
-            break;
-
         case 0x75:              /* DMA DAC, 4-bit ADPCM Reference */
-            s->needed_bytes = 2;
-            qemu_log_mask(LOG_UNIMP, "0x74 - DMA DAC, 4-bit ADPCM Reference not"
-                          " implemented\n");
-            break;
-
         case 0x76:              /* DMA DAC, 2.6-bit ADPCM */
-            s->needed_bytes = 2;
-            qemu_log_mask(LOG_UNIMP, "0x74 - DMA DAC, 2.6-bit ADPCM not"
-                          " implemented\n");
-            break;
-
         case 0x77:              /* DMA DAC, 2.6-bit ADPCM Reference */
             s->needed_bytes = 2;
-            qemu_log_mask(LOG_UNIMP, "0x74 - DMA DAC, 2.6-bit ADPCM Reference"
-                          " not implemented\n");
             break;
 
         case 0x7d:
-            qemu_log_mask(LOG_UNIMP, "0x7d - Autio-Initialize DMA DAC, 4-bit"
+            qemu_log_mask(LOG_UNIMP, "0x7d - Auto-Initialize DMA DAC, 4-bit"
                           " ADPCM Reference\n");
             qemu_log_mask(LOG_UNIMP, "not implemented\n");
             break;
 
         case 0x7f:
-            qemu_log_mask(LOG_UNIMP, "0x7d - Autio-Initialize DMA DAC, 2.6-bit"
+            qemu_log_mask(LOG_UNIMP, "0x7d - Auto-Initialize DMA DAC, 2.6-bit"
                           " ADPCM Reference\n");
             qemu_log_mask(LOG_UNIMP, "not implemented\n");
             break;
@@ -698,6 +735,10 @@ static void command (SB16State *s, uint8_t cmd)
             control (s, 1);
             break;
 
+	case 0xd8:              /* Get speaker status */
+            dsp_out_data(s, s->speaker ? 0xff : 0x00);
+            break;
+
         case 0xd9:              /* exit auto-init DMA after this block. 16bit */
             s->dma_auto = 0;
             break;
@@ -708,6 +749,7 @@ static void command (SB16State *s, uint8_t cmd)
 
         case 0xe0:              /* DSP identification */
             s->needed_bytes = 1;
+	    s->out_data_len = 0;
             break;
 
         case 0xe1:
@@ -798,6 +840,45 @@ static uint16_t dsp_get_hilo (SB16State *s)
     return (hi << 8) | lo;
 }
 
+
+/* ADPCM PAIN */
+
+static const int index_table[16] = {
+    -1, -1, -1, -1, 2, 4, 6, 8,
+    -1, -1, -1, -1, 2, 4, 6, 8
+};
+
+static const int step_table[89] = {
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+    50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+    253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+    1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+    3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487,
+    12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
+};
+
+static int16_t decode_adpcm_4bit(uint8_t code, SB16State *s) {
+    int step = step_table[s->adpcm_index];
+    int diff = step >> 3;
+    if (code & 4) diff += step;
+    if (code & 2) diff += step >> 1;
+    if (code & 1) diff += step >> 2;
+
+    if (code & 8) s->adpcm_valpred -= diff;
+    else s->adpcm_valpred += diff;
+
+    if (s->adpcm_valpred > 32767) s->adpcm_valpred = 32767;
+    else if (s->adpcm_valpred < -32768) s->adpcm_valpred = -32768;
+
+    s->adpcm_index += index_table[code];
+    if (s->adpcm_index < 0) s->adpcm_index = 0;
+    else if (s->adpcm_index > 88) s->adpcm_index = 88;
+
+    return (int16_t)s->adpcm_valpred;
+}
+
+/* THE END OF ADPCM PAIN */
+
 static void complete (SB16State *s)
 {
     int d0, d1, d2;
@@ -805,18 +886,24 @@ static void complete (SB16State *s)
             s->cmd, s->in_index, s->needed_bytes);
 
     if (s->cmd > 0xaf && s->cmd < 0xd0) {
-        d2 = dsp_get_data (s);
-        d1 = dsp_get_data (s);
-        d0 = dsp_get_data (s);
+        d2 = dsp_get_data(s);
+        d1 = dsp_get_data(s);
+        d0 = dsp_get_data(s);
 
         if (s->cmd & 8) {
-            warn_report("sb16: ADC params cmd = 0x%x d0 = %d, d1 = %d, d2 = %d",
-                   s->cmd, d0, d1, d2);
+		/* this is yet another todo for another time */
+            ldebug("Executing ADC cmd=0x%x mode=%d len=%d", s->cmd, d0, d1 + (d2 << 8));
+            
+            s->use_hdma = s->cmd < 0xc0;
+            s->fmt_bits = (s->cmd >> 4) == 11 ? 16 : 8;
+            s->fmt_signed = (d0 >> 4) & 1;
+            s->fmt_stereo = (d0 >> 5) & 1;
+            s->block_size = (d1 + (d2 << 8) + 1) << (s->fmt_bits == 16);
+
+            control(s, 1);
         }
         else {
-            ldebug("cmd = 0x%x d0 = %d, d1 = %d, d2 = %d",
-                    s->cmd, d0, d1, d2);
-            dma_cmd (s, s->cmd, d0, d1 + (d2 << 8));
+            dma_cmd(s, s->cmd, d0, d1 + (d2 << 8));
         }
     }
     else {
@@ -866,9 +953,14 @@ static void complete (SB16State *s)
             }
             break;
 
-        case 0x10:
-            d0 = dsp_get_data (s);
-            warn_report("sb16: cmd 0x10 d0=0x%x", d0);
+	case 0x10:
+            d0 = dsp_get_data(s);
+            if (s->speaker) {
+                uint8_t sample = d0;
+                /* i cannot be bothered right now, this should be done properly later */
+                AUD_set_active_out(s->voice, 1);
+                AUD_write(s->voice, &sample, 1);
+            }
             break;
 
         case 0x14:
@@ -890,19 +982,29 @@ static void complete (SB16State *s)
              * http://homepages.cae.wisc.edu/~brodskye/sb16doc/sb16doc.html#SamplingRate
              */
             s->freq = restrict_sampling_rate(dsp_get_hilo(s));
+	    s->highspeed = 1;
             ldebug("set freq %d", s->freq);
             break;
 
         case 0x48:
             s->block_size = dsp_get_lohi (s) + 1;
+	    s->left_till_irq = s->block_size;
             ldebug("set dma block len %d", s->block_size);
             break;
 
         case 0x74:
+		d0 = dsp_get_lohi(s);
+	        s->block_size = d0 + 1;
+	        s->adpcm_valpred = (int8_t)dsp_get_data(s) << 8;
+	        s->adpcm_index = 0;
+	        control(s, 1);
+	        break;
         case 0x75:
         case 0x76:
         case 0x77:
-            /* ADPCM stuff, ignore */
+            d0 = dsp_get_lohi(s);
+            qemu_log_mask(LOG_UNIMP, "sb16: ADPCM command 0x%x len %d not implemented\n", 
+                          s->cmd, d0);
             break;
 
         case 0x80:
@@ -928,6 +1030,10 @@ static void complete (SB16State *s)
                 ldebug("mix silence %d %d %" PRId64, samples, bytes, ticks);
             }
             break;
+
+	case 0xd8:
+            dsp_out_data(s, s->speaker ? 0xff : 0x00);
+            goto exit;
 
         case 0xe0:
             d0 = dsp_get_data (s);
@@ -976,6 +1082,8 @@ static void complete (SB16State *s)
 
     ldebug("");
     s->cmd = -1;
+    exit:
+	return;
 }
 
 static void legacy_reset (SB16State *s)
@@ -1210,6 +1318,7 @@ static void reset_mixer (SB16State *s)
     for (i = 0x30; i < 0x48; i++) {
         s->mixer_regs[i] = 0x20;
     }
+
     sb16_update_opl_volume(s);
 }
 
@@ -1226,22 +1335,37 @@ static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
 
     (void) nport;
     ldebug("mixer_write [0x%x] <- 0x%x", s->mixer_nreg, val);
-/* fuck it */
-    if (s->mixer_nreg > 255) {
-        return;
-    }
 
     switch (s->mixer_nreg) {
     case 0x00:
-        reset_mixer (s);
+        reset_mixer(s);
         break;
-/* nasty but it might do */
-	case 0x22:
-	case 0x26:
-	case 0x04:
-	    s->mixer_regs[s->mixer_nreg] = val;
-	    sb16_update_opl_volume(s);
-	    break;
+
+    case 0x04:
+        s->mixer_regs[0x04] = val;
+        s->mixer_regs[0x32] = (val & 0xf0);
+        s->mixer_regs[0x33] = (val & 0x0f) << 4;
+        break;
+
+    case 0x22:
+        s->mixer_regs[0x22] = val;
+        s->mixer_regs[0x30] = (val & 0xf0);
+        s->mixer_regs[0x31] = (val & 0x0f) << 4;
+        break;
+
+    case 0x26:
+        s->mixer_regs[0x26] = val;
+        s->mixer_regs[0x34] = (val & 0xf0);
+        s->mixer_regs[0x35] = (val & 0x0f) << 4;
+        break;
+
+    case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35:
+        s->mixer_regs[s->mixer_nreg] = val;
+        s->mixer_regs[0x22] = (s->mixer_regs[0x30] & 0xf0) | (s->mixer_regs[0x31] >> 4);
+        s->mixer_regs[0x04] = (s->mixer_regs[0x32] & 0xf0) | (s->mixer_regs[0x33] >> 4);
+        s->mixer_regs[0x26] = (s->mixer_regs[0x34] & 0xf0) | (s->mixer_regs[0x35] >> 4);
+        break;
+
     case 0x80:
         {
             int irq = irq_of_magic (val);
@@ -1254,21 +1378,27 @@ static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
 
     case 0x81:
         {
-            int dma, hdma;
-
-            dma = ctz32 (val & 0xf);
-            hdma = ctz32 (val & 0xf0);
+            int dma = ctz32(val & 0xf);
+            int hdma = ctz32(val & 0xf0);
+            
             if (dma != s->dma || hdma != s->hdma) {
-                qemu_log_mask(LOG_GUEST_ERROR, "attempt to change DMA 8bit"
-                              " %d(%d), 16bit %d(%d) (val=0x%x)\n", dma, s->dma,
-                              hdma, s->hdma, val);
+                ldebug("jumping DMA 8bit %d -> %d, 16bit %d -> %d", 
+                       s->dma, dma, s->hdma, hdma);
+                
+                s->dma = dma;
+                s->hdma = hdma;
+                
+                ISABus *bus = isa_bus_from_device(ISA_DEVICE(s));
+                s->isa_dma = isa_bus_get_dma(bus, s->dma);
+                s->isa_hdma = isa_bus_get_dma(bus, s->hdma);
             }
+        }
+        break;
+
 #if 0
             s->dma = dma;
             s->hdma = hdma;
 #endif
-        }
-        break;
 
     case 0x82:
         qemu_log_mask(LOG_GUEST_ERROR, "attempt to write into IRQ status"
@@ -1279,14 +1409,11 @@ static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
         if (s->mixer_nreg >= 0x80) {
             ldebug("attempt to write mixer[0x%x] <- 0x%x", s->mixer_nreg, val);
         }
+        s->mixer_regs[s->mixer_nreg] = val;
         break;
     }
-#pragma GCC diagnostic ignored "-Wstringop-overflow"
-    s->mixer_regs[s->mixer_nreg] = val;
-#pragma GCC diagnostic pop
-    if (s->mixer_nreg == 0x22 || s->mixer_nreg == 0x26) {
-        sb16_update_opl_volume(s);
-    }
+    sb16_update_opl_volume(s);
+    sb16_update_voice_volume(s);
 }
 
 static uint32_t mixer_read(void *opaque, uint32_t nport)
@@ -1342,15 +1469,46 @@ static int write_audio (SB16State *s, int nchan, int dma_pos,
     return net;
 }
 
+static int SB_write_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
+{
+    SB16State *s = opaque;
+    IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
+    IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
+    uint8_t tmpbuf[4096];
+    int to_copy, copied;
+
+    to_copy = MIN(s->left_till_irq, dma_len - dma_pos);
+    if (to_copy > (int)sizeof(tmpbuf)) {
+        to_copy = sizeof(tmpbuf);
+    }
+    /* silence 4 now */
+    memset(tmpbuf, (s->fmt_bits == 8 && !s->fmt_signed) ? 0x80 : 0x00, to_copy);
+
+    copied = k->write_memory(isa_dma, nchan, tmpbuf, dma_pos, to_copy);
+
+    dma_pos = (dma_pos + copied) % dma_len;
+    s->left_till_irq -= copied;
+
+    if (s->left_till_irq <= 0) {
+        s->mixer_regs[0x82] |= (nchan & 4) ? 2 : 1;
+        qemu_irq_raise (s->pic);
+        s->left_till_irq = s->block_size;
+    }
+
+    return dma_pos;
+}
+
 static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 {
     SB16State *s = opaque;
-    int till, copy, written, free;
+    int till, copy, written = 0, free;
+    
+    IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
+    IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
+    uint8_t tmpbuf[4096];
+    int to_copy;
 
     if (s->block_size <= 0) {
-        qemu_log_mask(LOG_GUEST_ERROR, "invalid block size=%d nchan=%d"
-                      " dma_pos=%d dma_len=%d\n", s->block_size, nchan,
-                      dma_pos, dma_len);
         return dma_pos;
     }
 
@@ -1359,9 +1517,6 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
     }
 
     if (s->voice) {
-	if (!dma_len) {
-            return dma_pos;
-        }
         free = s->audio_free & ~s->align;
         if (free <= 0) {
             release_DREQ(s, nchan);
@@ -1374,45 +1529,60 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
     copy = free;
     till = s->left_till_irq;
 
-#ifdef DEBUG_SB16_MOST
-    warn_report("sb16: pos:%06d %d till:%d len:%d",
-           dma_pos, free, till, dma_len);
-#endif
+    to_copy = MIN(copy, till);
+    to_copy = MIN(to_copy, dma_len - dma_pos);
 
-    if (till <= copy) {
-        if (s->dma_auto == 0) {
-            copy = till;
+    if (s->cmd == 0x74) {
+        if (to_copy > (int)sizeof(tmpbuf) / 4) {
+            to_copy = sizeof(tmpbuf) / 4;
         }
+
+        uint8_t adpcm_data[1024]; 
+        int adpcm_copied = k->read_memory(isa_dma, nchan, adpcm_data, dma_pos, to_copy);
+        
+        int16_t *out_samples = (int16_t *)tmpbuf;
+        for (int i = 0; i < adpcm_copied; i++) {
+            out_samples[i * 2] = decode_adpcm_4bit(adpcm_data[i] >> 4, s);
+            out_samples[i * 2 + 1] = decode_adpcm_4bit(adpcm_data[i] & 0x0f, s);
+        }
+
+        int bytes_out = AUD_write(s->voice, tmpbuf, adpcm_copied * 4);
+        written = bytes_out / 4;
+    } else {
+        written = write_audio(s, nchan, dma_pos, dma_len, to_copy);
     }
 
-    written = write_audio (s, nchan, dma_pos, dma_len, copy);
+    if (s->cmd == 0x75) {
+    	uint8_t ref_byte;
+    
+    	k->read_memory(isa_dma, nchan, &ref_byte, dma_pos, 1);
+    	s->adpcm_valpred = (int16_t)((ref_byte - 128) << 8);
+    	s->adpcm_index = 0;
+
+    	dma_pos = (dma_pos + 1) % dma_len;
+    	s->cmd = 0x74; 
+    }
+
     dma_pos = (dma_pos + written) % dma_len;
     s->left_till_irq -= written;
     s->audio_free -= written;
+
     if (s->left_till_irq <= 0) {
         s->mixer_regs[0x82] |= (nchan & 4) ? 2 : 1;
-        qemu_irq_raise (s->pic);
+        qemu_irq_raise(s->pic);
+
+        if (s->block_size > 0) {
+            s->left_till_irq = s->block_size + (s->left_till_irq % s->block_size);
+        } else {
+            s->left_till_irq = s->block_size = 1024;
+        }
+
         if (s->dma_auto == 0) {
-            control (s, 0);
-            speaker (s, 0);
+            control(s, 0);
+            speaker(s, 0);
         }
     }
 
-#ifdef DEBUG_SB16_MOST
-    ldebug("pos %5d free %5d size %5d till % 5d copy %5d written %5d size %5d",
-            dma_pos, free, dma_len, s->left_till_irq, copy, written,
-            s->block_size);
-#endif
-
-    while (s->left_till_irq <= 0) {
-        s->left_till_irq = s->block_size + s->left_till_irq;
-    }
-    if (s->voice) {
-        free = s->audio_free & ~s->align;
-        if (free <= 0) {
-            release_DREQ(s, nchan);
-        }
-    }
     return dma_pos;
 }
 
@@ -1535,6 +1705,10 @@ static MemoryRegionPortio opl_portio_list[] = {
     PORTIO_END_OF_LIST (),
 };
 
+static MemoryRegionPortio mpu_ioport_list[] = {
+    { 0, 2, 1, .read = mpu_read, .write = mpu_write },
+    PORTIO_END_OF_LIST (),
+};
 
 static void sb16_initfn (Object *obj)
 {
@@ -1564,12 +1738,21 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
 
     s->pic = isa_bus_get_irq(bus, s->irq);
 
+    k = ISADMA_GET_CLASS(s->isa_hdma);
+    k->register_channel(s->isa_hdma, s->hdma, SB_read_DMA, s);
+    
+    k->register_channel(s->isa_hdma, s->hdma, SB_write_DMA, s);
+    k->register_channel(s->isa_dma, s->dma, SB_write_DMA, s);
+
     s->mixer_regs[0x80] = magic_of_irq (s->irq);
     s->mixer_regs[0x81] = (1 << s->dma) | (1 << s->hdma);
-    s->mixer_regs[0x82] = 2 << 5;
+    s->mixer_regs[0x82] = 0x00;
 
     s->csp_regs[5] = 1;
     s->csp_regs[9] = 0xf8;
+
+    /* just in case */
+    s->align = (s->fmt_bits == 16) ? 1 : 0;
 
     OPL3_LockTable();
     s->ymf262 = ymf262_init(14318180, 44100);
@@ -1592,8 +1775,9 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
         error_setg(errp, "warning: Could not create auxiliary timer");
     }
 
-    isa_register_portio_list(isadev, &s->portio_list, s->port,
-                             sb16_ioport_list, s, "sb16");
+    isa_register_portio_list(isadev, &s->portio_list, s->port, sb16_ioport_list, s, "sb16");
+
+    isa_register_portio_list(isadev, &s->mpu_portio_list, 0x330, mpu_ioport_list, s, "sb16-mpu401");
 
     k = ISADMA_GET_CLASS(s->isa_hdma);
     k->register_channel(s->isa_hdma, s->hdma, SB_read_DMA, s);
