@@ -41,7 +41,6 @@
 #include "qemu/help_option.h"
 #include "qemu/hw-version.h"
 #include "qemu/uuid.h"
-#include "qemu/target-info.h"
 #include "system/reset.h"
 #include "system/runstate.h"
 #include "system/runstate-action.h"
@@ -619,7 +618,7 @@ static int parse_add_fd(void *opaque, QemuOpts *opts, Error **errp)
     }
 #endif
     if (dupfd == -1) {
-        error_setg(errp, "error duplicating fd: %s", strerror(errno));
+        error_setg_errno(errp, errno, "error duplicating fd");
         return -1;
     }
 

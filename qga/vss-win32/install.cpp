@@ -547,6 +547,28 @@ STDAPI DllUnregisterServer(void)
     return S_OK; /* Uninstall should never fail */
 }
 
+
+/* Support function to convert ASCII string into BSTR (used in _bstr_t) */
+#ifndef CONFIG_CONVERT_STRING_TO_BSTR
+namespace _com_util
+{
+    BSTR WINAPI ConvertStringToBSTR(const char *ascii) {
+        int len = strlen(ascii);
+        BSTR bstr = SysAllocStringLen(NULL, len);
+
+        if (!bstr) {
+            return NULL;
+        }
+
+        if (mbstowcs(bstr, ascii, len) == (size_t)-1) {
+            qga_debug("Failed to convert string '%s' into BSTR", ascii);
+            bstr[0] = 0;
+        }
+        return bstr;
+    }
+}
+#endif
+
 /* Stop QGA VSS provider service using Winsvc API  */
 STDAPI StopService(void)
 {
