@@ -38,6 +38,10 @@
 #include "qemu/module.h"
 #include "qapi/error.h"
 #include "qom/object.h"
+#include "chardev/char-fe.h"
+#include "qapi/error.h"
+#include "qemu/fifo8.h"
+
 #include "ymf262.h"
 
 #define DEBUG 0
@@ -122,7 +126,12 @@ struct SB16State {
     PortioList hack_portio_list;
 
     /* evil */
+    Fifo8 mpu_fifo;
+    CharFrontend mpu_chr;
+    MemoryRegion mpu_io;
+    bool mpu_uart_mode;
     PortioList mpu_portio_list;
+    bool mpu_has_ack;
 
     QEMUTimer *aux_ts;
     /* mixer state */
@@ -253,19 +262,81 @@ static uint32_t sb16_opl_read(void *opaque, uint32_t nport)
     return ymf262_read(s->ymf262, a);
 }
 
-static void mpu_write(void *opaque, uint32_t addr, uint32_t val)
+static int mpu_can_receive(void *opaque)
 {
-    /* stub!! for now :) */
-    ldebug("MPU-401 write addr 0x%x <- 0x%x", addr, val);
+    SB16State *s = opaque;
+    return fifo8_num_free(&s->mpu_fifo);
 }
 
-static uint32_t mpu_read(void *opaque, uint32_t addr)
+
+static void mpu_receive(void *opaque, const uint8_t *buf, int size)
 {
-    if ((addr & 1) == 1) {
-        return 0x3F; /* FIXME: this is not good, what's being done is that the sound card is told that there's a device ready even if there isn't one, although this seems to satisfy the 1992 Win3.1 drivers so.. i guess it's fine then? */
+    SB16State *s = opaque;
+
+    if (!s->mpu_uart_mode) {
+        return;
     }
 
-    return 0xff;
+    for (int i = 0; i < size; i++) {
+        fifo8_push(&s->mpu_fifo, buf[i]);
+    }
+
+    qemu_irq_raise(s->pic);
+}
+
+
+static void mpu_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
+{
+    SB16State *s = opaque;
+    uint8_t byte = val & 0xff;
+
+    if (addr == 1) {
+        if (byte == 0x3F) {
+            s->mpu_uart_mode = true;
+            s->mpu_has_ack = true;
+            qemu_irq_raise(s->pic);
+        } else if (byte == 0xFF) {
+            s->mpu_uart_mode = false;
+            s->mpu_has_ack = true;
+            fifo8_reset(&s->mpu_fifo);
+	for (int ch = 0; ch < 16; ch++) {
+        	uint8_t all_notes_off[] = { 0xB0 | ch, 0x7B, 0x00 };
+        	qemu_chr_fe_write_all(&s->mpu_chr, all_notes_off, 3);
+    	}
+            qemu_irq_raise(s->pic);
+        }
+    } else {
+        if (s->mpu_uart_mode) {
+            qemu_chr_fe_write_all(&s->mpu_chr, &byte, 1);
+        }
+    }
+}
+
+static uint64_t mpu_read(void *opaque, hwaddr addr, unsigned size)
+{
+    SB16State *s = opaque;
+
+    if (addr == 1) { 
+        uint8_t status = 0x3F;
+
+        if (!s->mpu_has_ack && fifo8_is_empty(&s->mpu_fifo)) {
+            status |= ~0x40;
+        }
+        return status;
+    }
+
+    uint8_t ret = 0xFF;
+    if (s->mpu_has_ack) {
+        s->mpu_has_ack = false;
+        ret = 0xFE;
+    } else if (!fifo8_is_empty(&s->mpu_fifo)) {
+        ret = fifo8_pop(&s->mpu_fifo);
+    }
+
+    if (!s->mpu_has_ack && fifo8_is_empty(&s->mpu_fifo)) {
+        qemu_irq_lower(s->pic);
+    }
+    return ret;
 }
 
 static void SB_audio_callback (void *opaque, int free);
@@ -1705,9 +1776,14 @@ static MemoryRegionPortio opl_portio_list[] = {
     PORTIO_END_OF_LIST (),
 };
 
-static MemoryRegionPortio mpu_ioport_list[] = {
-    { 0, 2, 1, .read = mpu_read, .write = mpu_write },
-    PORTIO_END_OF_LIST (),
+static const MemoryRegionOps sb16_mpu_ops = {
+    .read = mpu_read,
+    .write = mpu_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 1,
+    },
 };
 
 static void sb16_initfn (Object *obj)
@@ -1777,7 +1853,15 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
 
     isa_register_portio_list(isadev, &s->portio_list, s->port, sb16_ioport_list, s, "sb16");
 
-    isa_register_portio_list(isadev, &s->mpu_portio_list, 0x330, mpu_ioport_list, s, "sb16-mpu401");
+    fifo8_create(&s->mpu_fifo, 1024);
+
+    qemu_chr_fe_set_handlers(&s->mpu_chr, mpu_can_receive, mpu_receive, NULL, NULL, s, NULL, true);
+
+    if (s->mpu_chr.chr) {
+        memory_region_init_io(&s->mpu_io, OBJECT(s), &sb16_mpu_ops, s, "sb16-mpu401", 2);
+        isa_register_ioport(isadev, &s->mpu_io, 0x330);
+        qemu_chr_fe_set_handlers(&s->mpu_chr, NULL, NULL, NULL, NULL, s, NULL, true);
+    }
 
     k = ISADMA_GET_CLASS(s->isa_hdma);
     k->register_channel(s->isa_hdma, s->hdma, SB_read_DMA, s);
@@ -1795,6 +1879,7 @@ static const Property sb16_properties[] = {
     DEFINE_PROP_UINT32 ("irq",     SB16State, irq,  5),
     DEFINE_PROP_UINT32 ("dma",     SB16State, dma,  1),
     DEFINE_PROP_UINT32 ("dma16",   SB16State, hdma, 5),
+    DEFINE_PROP_CHR    ("mpu401", SB16State, mpu_chr),
 };
 
 static void sb16_class_initfn(ObjectClass *klass, const void *data)
