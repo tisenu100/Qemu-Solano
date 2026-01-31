@@ -47,8 +47,6 @@
 #define KBD_CCMD_WRITE_MODE        0x60
 /* Get controller version */
 #define KBD_CCMD_GET_VERSION       0xA1
-/* Password Install */
-#define KBD_CCMD_PSW_INSTALL       0xA5
 /* Disable mouse interface */
 #define KBD_CCMD_MOUSE_DISABLE     0xA7
 /* Enable mouse interface */
@@ -65,8 +63,6 @@
 #define KBD_CCMD_KBD_ENABLE        0xAE
 /* read input port */
 #define KBD_CCMD_READ_INPORT       0xC0
-/* read mode */
-#define KBD_CCMD_READ_MODE_AMI     0xCA
 /* read output port */
 #define KBD_CCMD_READ_OUTPORT      0xD0
 /* write output port */
@@ -93,7 +89,7 @@
 #define KBD_STAT_OBF           0x01
 /* Keyboard input buffer full */
 #define KBD_STAT_IBF           0x02
-/* System flag */
+/* Self test successful */
 #define KBD_STAT_SELFTEST      0x04
 /* Last write was a command write (0=data) */
 #define KBD_STAT_CMD           0x08
@@ -277,26 +273,7 @@ static uint64_t kbd_read_status(void *opaque, hwaddr addr,
 {
     KBDState *s = opaque;
     int val;
-
-    switch(s->write_cmd) {
-        case KBD_CCMD_GET_VERSION:
-            val = 0xff;
-            s->write_cmd = 0x00;
-        break;
-
-        case KBD_CCMD_PSW_INSTALL:
-            val = 0x01;
-        break;
-
-        case KBD_CCMD_READ_MODE_AMI:
-            val = 0x01;
-        break;
-
-        default:
-            val = s->status;
-        break;
-    }
-
+    val = s->status;
     trace_pckbd_kbd_read_status(val);
     return val;
 }
@@ -358,13 +335,49 @@ static void kbd_write_command(void *opaque, hwaddr addr,
     }
 
     switch (val) {
+    /* AMIKEY Specific Commands */
+    case 0x00 ... 0x1f: /* AMIBIOS i8042 RAM Read */
+    case 0x21 ... 0x3f:
+        fprintf(stderr, "AMIKEY: Reads from Byte 0x%02x\n", (uint8_t)val & 0x1f);
+        s->status = s->i8042_mem[val & 0x1f];
+    break;
+
+    case 0x40 ... 0x5f:  /* AMIBIOS i8042 RAM Write */
+    case 0x61 ... 0x7f:
+        fprintf(stderr, "AMIKEY: Write Byte 0x%02x\n", (uint8_t)val & 0x1f);
+        val = s->i8042_mem[s->write_cmd & 0x1f];
+        s->write_cmd = val; /* Store the memory address to be written */
+    break;
+
+    case 0xa0: /* AMIKEY - Get Copyright String */
+        s->status = 0x00; /* 0h is a null terminator */
+        fprintf(stderr, "AMIKEY: A0h is unimplemented\n");
+    break;
+
+    case 0xa1: /* AMIKEY - Get Controller Version */
+        s->status = 0x48;
+        fprintf(stderr, "AMIKEY: Read Controller version\n");
+    break;
+
+    case 0xa2: /* AMIBIOS Reset Controller Lines */
+    case 0xa3:
+    case 0xb0 ... 0xbd: /* AMIBIOS Set KBC Controller Lines */
+        fprintf(stderr, "AMIKEY: Line Control!\n");
+        s->status = 0xff;
+        kbd_queue(s, 0xff, 0); /* Send Garbage data to indicate completion */
+    break;
+
+    case 0xa6: /* AMIBIOS Read Clock (A5h indicates writing to the controller) */
+        fprintf(stderr, "AMIKEY: Read Clock\n");
+        s->status = 0x01;
+    break;
+
+    /* Standard i8042 command set */
     case KBD_CCMD_READ_MODE:
         kbd_queue(s, s->mode, 0);
-        break;
+    break;
+
     case KBD_CCMD_WRITE_MODE:
-    case KBD_CCMD_GET_VERSION:
-    case KBD_CCMD_PSW_INSTALL:
-    case KBD_CCMD_READ_MODE_AMI:
     case KBD_CCMD_WRITE_OBUF:
     case KBD_CCMD_WRITE_AUX_OBUF:
     case KBD_CCMD_WRITE_MOUSE:
@@ -382,6 +395,7 @@ static void kbd_write_command(void *opaque, hwaddr addr,
         kbd_queue(s, 0x00, 0);
         break;
     case KBD_CCMD_SELF_TEST:
+        s->status |= 0x18;
         kbd_queue(s, 0x55, 0);
         break;
     case KBD_CCMD_KBD_TEST:
@@ -441,9 +455,6 @@ static uint64_t kbd_read_data(void *opaque, hwaddr addr,
         }
     }
 
-    if(s->write_cmd == KBD_CCMD_PSW_INSTALL)
-        s->obdata = 0xf1;
-
     trace_pckbd_kbd_read_data(s->obdata);
     return s->obdata;
 }
@@ -495,9 +506,7 @@ static void kbd_write_data(void *opaque, hwaddr addr,
     default:
         break;
     }
-    
-    if(s->write_cmd != KBD_CCMD_PSW_INSTALL)
-        s->write_cmd = 0;
+    s->write_cmd = 0;
 }
 
 static void kbd_reset(void *opaque)
@@ -506,18 +515,12 @@ static void kbd_reset(void *opaque)
 
     s->mode = KBD_MODE_KBD_INT | KBD_MODE_MOUSE_INT;
     s->status = KBD_STAT_CMD | KBD_STAT_UNLOCKED;
-
-    if(s->is_warm_reset)
-        s->status |= KBD_STAT_SELFTEST;
-
     s->outport = KBD_OUT_RESET | KBD_OUT_A20 | KBD_OUT_ONES;
     s->pending = 0;
     kbd_deassert_irq(s);
     if (s->throttle_timer) {
         timer_del(s->throttle_timer);
     }
-
-    s->is_warm_reset = 1;
 }
 
 static uint8_t kbd_outport_default(KBDState *s)
@@ -888,8 +891,6 @@ static void i8042_initfn(Object *obj)
                             "ps2-kbd-input-irq", 1);
     qdev_init_gpio_in_named(DEVICE(obj), i8042_set_mouse_irq,
                             "ps2-mouse-input-irq", 1);
-    
-    s->is_warm_reset = 0;
 }
 
 static void i8042_realizefn(DeviceState *dev, Error **errp)

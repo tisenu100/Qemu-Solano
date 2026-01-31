@@ -23,6 +23,7 @@ typedef struct KBDState {
     uint8_t outport;
     uint32_t migration_flags;
     uint32_t obsrc;
+    uint32_t i8042_mem[32];
     bool outport_present;
     bool extended_state;
     bool extended_state_loaded;
