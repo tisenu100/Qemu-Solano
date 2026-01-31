@@ -339,7 +339,7 @@ static void kbd_write_command(void *opaque, hwaddr addr,
     case 0x00 ... 0x1f: /* AMIBIOS i8042 RAM Read */
     case 0x21 ... 0x3f:
         fprintf(stderr, "AMIKEY: Reads from Byte 0x%02x\n", (uint8_t)val & 0x1f);
-        s->status = s->i8042_mem[val & 0x1f];
+        kbd_queue(s, s->i8042_mem[val & 0x1f], 0);
     break;
 
     case 0x40 ... 0x5f:  /* AMIBIOS i8042 RAM Write */
@@ -350,12 +350,12 @@ static void kbd_write_command(void *opaque, hwaddr addr,
     break;
 
     case 0xa0: /* AMIKEY - Get Copyright String */
-        s->status = 0x00; /* 0h is a null terminator */
+        kbd_queue(s, 0x00, 0); /* 0h is a null terminator */
         fprintf(stderr, "AMIKEY: A0h is unimplemented\n");
     break;
 
     case 0xa1: /* AMIKEY - Get Controller Version */
-        s->status = 0x48;
+        kbd_queue(s, 0x48, 0);
         fprintf(stderr, "AMIKEY: Read Controller version\n");
     break;
 
@@ -363,13 +363,26 @@ static void kbd_write_command(void *opaque, hwaddr addr,
     case 0xa3:
     case 0xb0 ... 0xbd: /* AMIBIOS Set KBC Controller Lines */
         fprintf(stderr, "AMIKEY: Line Control!\n");
-        s->status = 0xff;
         kbd_queue(s, 0xff, 0); /* Send Garbage data to indicate completion */
     break;
 
+    case 0xa4: /* AMIBIOS Check Password */
+        kbd_queue(s, 0xf1, 0);
+        fprintf(stderr, "AMIKEY: Check Password\n");
+    break;
+
+    case 0xa5: /* AMIBIOS Read Clock (A5h indicates writing to the controller) */
+        kbd_queue(s, 0x01, 0);
+        fprintf(stderr, "AMIKEY: Write Clock\n");
+    break;
+
     case 0xa6: /* AMIBIOS Read Clock (A5h indicates writing to the controller) */
+        kbd_queue(s, 0x01, 0);
         fprintf(stderr, "AMIKEY: Read Clock\n");
-        s->status = 0x01;
+    break;
+
+    case 0xca: /* AMIBIOS Read Mode (CBh indicates writing to the switch) */
+        kbd_queue(s, 0x00, 0);
     break;
 
     /* Standard i8042 command set */
