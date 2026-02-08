@@ -35,6 +35,7 @@ struct I8257State {
     uint8_t mask;
     uint8_t flip_flop;
     I8257Regs regs[4];
+    uint8_t deadzone[3];
     MemoryRegion channel_io;
     MemoryRegion cont_io;
 
