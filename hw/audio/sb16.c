@@ -409,7 +409,7 @@ static void log_dsp (SB16State *dsp)
 static void speaker (SB16State *s, int on)
 {
     s->speaker = on;
-    /*AUD_enable (s->voice, on);*/
+    /* audio_be_enable (s->voice, on); */
 }
 
 static void control (SB16State *s, int hold)
@@ -423,11 +423,11 @@ static void control (SB16State *s, int hold)
 	if (!s->voice) {
         hold_DREQ(s, nchan);
 	}
-        AUD_set_active_out (s->voice, 1);
+        audio_be_set_active_out(s->audio_be, s->voice, 1);
     }
     else {
         release_DREQ(s, nchan);
-        AUD_set_active_out (s->voice, 0);
+        audio_be_set_active_out(s->audio_be, s->voice, 0);
     }
 }
 
@@ -451,9 +451,9 @@ static void continue_dma8 (SB16State *s)
         as.freq = s->freq;
         as.nchannels = 1 << s->fmt_stereo;
         as.fmt = s->fmt;
-        as.endianness = 0;
+        as.big_endian = false;
 
-        s->voice = AUD_open_out (
+        s->voice = audio_be_open_out(
             s->audio_be,
             s->voice,
             "sb16",
@@ -615,9 +615,9 @@ static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
         as.freq = s->freq;
         as.nchannels = 1 << s->fmt_stereo;
         as.fmt = s->fmt;
-        as.endianness = 0;
+        as.big_endian = false;
 
-        s->voice = AUD_open_out (
+        s->voice = audio_be_open_out(
             s->audio_be,
             s->voice,
             "sb16",
@@ -1171,9 +1171,9 @@ static void legacy_reset (SB16State *s)
     as.freq = s->freq;
     as.nchannels = 1;
     as.fmt = AUDIO_FORMAT_U8;
-    as.endianness = 0;
+    as.big_endian = false;
 
-    s->voice = AUD_open_out (
+    s->voice = audio_be_open_out(
         s->audio_be,
         s->voice,
         "sb16",
@@ -1183,7 +1183,7 @@ static void legacy_reset (SB16State *s)
         );
 
     /* Not sure about that... */
-    /* AUD_set_active_out (s->voice, 1); */
+    /* audio_be_set_active_out (s->voice, 1); */
 }
 
 static void reset (SB16State *s)
@@ -1526,7 +1526,7 @@ static int write_audio (SB16State *s, int nchan, int dma_pos,
         }
 
         copied = k->read_memory(isa_dma, nchan, tmpbuf, dma_pos, to_copy);
-        copied = AUD_write (s->voice, tmpbuf, copied);
+        copied = audio_be_write(s->audio_be, s->voice, tmpbuf, copied);
 
         temp -= copied;
         dma_pos = (dma_pos + copied) % dma_len;
@@ -1671,7 +1671,7 @@ static int sb16_post_load (void *opaque, int version_id)
     SB16State *s = opaque;
 
     if (s->voice) {
-        AUD_close_out (s->audio_be, s->voice);
+        audio_be_close_out(s->audio_be, s->voice);
         s->voice = NULL;
     }
 
@@ -1684,9 +1684,9 @@ static int sb16_post_load (void *opaque, int version_id)
             as.freq = s->freq;
             as.nchannels = 1 << s->fmt_stereo;
             as.fmt = s->fmt;
-            as.endianness = 0;
+            as.big_endian = false;
 
-            s->voice = AUD_open_out (
+            s->voice = audio_be_open_out(
                 s->audio_be,
                 s->voice,
                 "sb16",
@@ -1801,7 +1801,7 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     IsaDmaClass *k;
     struct audsettings as;
 
-    if (!AUD_backend_check(&s->audio_be, errp)) {
+    if (!audio_be_check(&s->audio_be, errp)) {
         return;
     }
 
