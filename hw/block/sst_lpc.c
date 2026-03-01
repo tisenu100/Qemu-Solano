@@ -99,6 +99,7 @@ static void sst_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
 
         case 3: /* Byte Write */
             s->buf[addr & 0x1fffff] = val;
+            flush_buffer(s, blk);
             s->stage = 0;
         break;
 
@@ -141,6 +142,7 @@ static void sst_write(void *opaque, hwaddr addr, uint64_t val, unsigned len)
                 break;
             }
 
+            flush_buffer(s, blk);
             s->stage = 0;
         break;
     }

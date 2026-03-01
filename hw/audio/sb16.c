@@ -121,7 +121,6 @@ struct SB16State {
     SWVoiceOut *voice_opl;
     int opl_ticking[2];
     uint64_t opl_dexp[2];
-    QEMUAudioTimeStamp opl_ats;
     PortioList opl_portio_list;
     PortioList hack_portio_list;
 
@@ -169,7 +168,7 @@ static void sb16_update_voice_volume(SB16State *s)
     vol.vol[0] = (sb16_log_vol[ml_idx] * sb16_log_vol[vl_idx] * 192) / 65025;
     vol.vol[1] = (sb16_log_vol[mr_idx] * sb16_log_vol[vr_idx] * 192) / 65025;
 
-    AUD_set_volume_out(s->voice, &vol);
+    audio_be_set_volume_out(s->audio_be, s->voice, &vol);
 }
 
 static void sb16_update_opl_volume(SB16State *s)
@@ -210,7 +209,7 @@ static void sb16_opl_callback(void *opaque, int free)
             interleaved[i * 2 + 1] = (int16_t)buf_r[i];
         }
 
-        AUD_write(s->voice_opl, interleaved, bytes);
+        audio_be_write(s->audio_be, s->voice_opl, &interleaved, bytes);
         g_free(buf_l);
         g_free(buf_r);
         g_free(interleaved);
@@ -244,7 +243,7 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
 	if ((nport & 0xF) == 9) a = 1;
     }
     if (s->voice_opl) {
-        AUD_set_active_out(s->voice_opl, 1);
+        audio_be_set_active_out(s->audio_be, s->voice_opl, 1);
     }
     ymf262_timer_over(s->ymf262, a); 
     ymf262_write(s->ymf262, a, val);
@@ -1029,8 +1028,8 @@ static void complete (SB16State *s)
             if (s->speaker) {
                 uint8_t sample = d0;
                 /* i cannot be bothered right now, this should be done properly later */
-                AUD_set_active_out(s->voice, 1);
-                AUD_write(s->voice, &sample, 1);
+                audio_be_set_active_out(s->audio_be, s->voice, 1);
+                audio_be_write(s->audio_be, s->voice, &sample, 1);
             }
             break;
 
@@ -1183,7 +1182,7 @@ static void legacy_reset (SB16State *s)
         );
 
     /* Not sure about that... */
-    /* audio_be_set_active_out (s->voice, 1); */
+    /* audio_be_set_active_out (s->audio_be, s->voice, 1); */
 }
 
 static void reset (SB16State *s)
@@ -1526,7 +1525,7 @@ static int write_audio (SB16State *s, int nchan, int dma_pos,
         }
 
         copied = k->read_memory(isa_dma, nchan, tmpbuf, dma_pos, to_copy);
-        copied = audio_be_write(s->audio_be, s->voice, tmpbuf, copied);
+        copied = audio_be_write(s->audio_be, s->voice, &tmpbuf, copied);
 
         temp -= copied;
         dma_pos = (dma_pos + copied) % dma_len;
@@ -1617,7 +1616,7 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
             out_samples[i * 2 + 1] = decode_adpcm_4bit(adpcm_data[i] & 0x0f, s);
         }
 
-        int bytes_out = AUD_write(s->voice, tmpbuf, adpcm_copied * 4);
+        int bytes_out = audio_be_write(s->audio_be, s->voice, &tmpbuf, adpcm_copied * 4);
         written = bytes_out / 4;
     } else {
         written = write_audio(s, nchan, dma_pos, dma_len, to_copy);
@@ -1838,9 +1837,8 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
         as.freq = 44100;
         as.nchannels = 2;
         as.fmt = AUDIO_FORMAT_S16;
-        as.endianness = 0;
-        s->voice_opl = AUD_open_out(s->audio_be, s->voice_opl, "sb16-opl", s, sb16_opl_callback, &as);
-        AUD_set_active_out(s->voice_opl, 1);
+        s->voice_opl = audio_be_open_out(s->audio_be, s->voice_opl, "sb16-opl", s, sb16_opl_callback, &as);
+        audio_be_set_active_out(s->audio_be, s->voice_opl, 1);
 	isa_register_portio_list(isadev, &s->opl_portio_list, s->port, opl_portio_list, s, "sb16-opl");
 	isa_register_portio_list(isadev, &s->hack_portio_list, 0x388, opl_portio_list, s, "sb16-opl");
     }
