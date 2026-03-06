@@ -73,38 +73,42 @@ static int agp_slot_get_pirq(PCIDevice *pci_dev, int pin)
     return (0x3210 >> (pin * 4)) & 7;
 }
 
-/* Board IRQ table used by the AOpen AX4B-G2 */
+/* Board IRQ table used by the ABit AB-BL7 */
 /* To add a device: -device rtl8139,bus=pci.2,addr=04.0 will place an RTL8139 on Slot 1 */
 static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
 {
     int ret = 0;
 
     switch (PCI_SLOT(pci_dev->devfn)) {
-        case 0x04: /* Slot 1 */
-            ret = (0x5432 >> (pin * 4)) & 7;
+        case 0x01: /* Slot 1 */
+            ret = (0x0321 >> (pin * 4)) & 7;
         break;
 
-        case 0x05: /* Slot 2 */
-            ret = (0x6543 >> (pin * 4)) & 7;
-        break;
-
-        case 0x0a: /* Slot 3 */
+        case 0x02: /* Slot 2 */
             ret = (0x7654 >> (pin * 4)) & 7;
         break;
 
-        case 0x07: /* Slot 4 */
-            ret = (0x1765 >> (pin * 4)) & 7;
+        case 0x03: /* Slot 3 */
+            ret = (0x6547 >> (pin * 4)) & 7;
         break;
 
-        case 0x09: /* Slot 5 */
-            ret = (0x1076 >> (pin * 4)) & 7;
+        case 0x04: /* Slot 4 */
+            ret = (0x5476 >> (pin * 4)) & 7;
+        break;
+    
+        case 0x05: /* Slot 5 */
+            ret = (0x4765 >> (pin * 4)) & 7;
         break;
 
-        case 0x0b: /* CNR Slot. Preferably avoid */
-            ret = (0x2107 >> (pin * 4)) & 7;
+        case 0x06: /* RAID Controller port (Unused) */
+            ret = (0x2301 >> (pin * 4)) & 7;
         break;
 
-        case 0x08: /* Occupied by the internal network controller */
+        case 0x07: /* CNR Port. Better avoid using */
+            ret = (0x4531 >> (pin * 4)) & 7;
+        break;
+
+        case 0x08: /* Occupied for the internal network controller (Unused) */
             ret = (0x7654 >> (pin * 4)) & 7;
         break;
 
