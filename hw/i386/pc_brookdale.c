@@ -311,7 +311,7 @@ static void pc_init(MachineState *machine)
     fprintf(stderr, "PC: Setting up timers\n");
     i8254 = kvm_pit_in_kernel() ? kvm_pit_init(isa_bus, 0x40) :           /*     KVM PIT     */ \
                                   i8254_pit_init(isa_bus, 0x40, 0, NULL); /* Legacy 8254 PIT */
-    object_property_set_link(OBJECT(pcms->pcspk), "i8254", OBJECT(i8254), &error_fatal);
+    object_property_set_link(OBJECT(pcms->pcspk), "pit", OBJECT(i8254), &error_fatal);
     isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
     ioapic_init_gsi(gsi_state, phb);
 
