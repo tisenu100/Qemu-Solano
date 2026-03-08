@@ -448,6 +448,12 @@ struct MachineState {
     struct NVDIMMState *nvdimms_state;
     struct NumaState *numa_state;
     bool acpi_spcr_enabled;
+    /*
+     * Whether to change virtual machine accelerator handle upon
+     * reset or not. Used only for debugging and testing purpose.
+     * Set to false by default for all regular use.
+     */
+    bool new_accel_vmfd_on_reset;
 };
 
 /*
@@ -867,20 +873,5 @@ extern const size_t hw_compat_3_1_len;
 
 extern GlobalProperty hw_compat_3_0[];
 extern const size_t hw_compat_3_0_len;
-
-extern GlobalProperty hw_compat_2_12[];
-extern const size_t hw_compat_2_12_len;
-
-extern GlobalProperty hw_compat_2_11[];
-extern const size_t hw_compat_2_11_len;
-
-extern GlobalProperty hw_compat_2_10[];
-extern const size_t hw_compat_2_10_len;
-
-extern GlobalProperty hw_compat_2_9[];
-extern const size_t hw_compat_2_9_len;
-
-extern GlobalProperty hw_compat_2_8[];
-extern const size_t hw_compat_2_8_len;
 
 #endif
