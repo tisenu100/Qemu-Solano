@@ -1228,10 +1228,7 @@ void pc_basic_device_init(struct PCMachineState *pcms,
 void pc_basic_device_init_simple(struct PCMachineState *pcms,
                                  ISABus *isa_bus, qemu_irq *gsi)
 {
-    int pit_isa_irq = 0;
-    qemu_irq pit_alt_irq = NULL;
     qemu_irq *a20_line;
-    ISADevice *pit = NULL;
     MemoryRegion *ioport80_io = g_new(MemoryRegion, 1);
     MemoryRegion *ioportF0_io = g_new(MemoryRegion, 1);
     ISADevice *i8042, *port92, *vmmouse;
@@ -1241,12 +1238,6 @@ void pc_basic_device_init_simple(struct PCMachineState *pcms,
 
     memory_region_init_io(ioportF0_io, NULL, &ioportF0_io_ops, NULL, "ioportF0", 1);
     memory_region_add_subregion(isa_bus->address_space_io, 0xf0, ioportF0_io);
-
-    pit = i8254_pit_init(isa_bus, 0x40, pit_isa_irq, pit_alt_irq);
-
-    object_property_set_link(OBJECT(pcms->pcspk), "pit",
-                             OBJECT(pit), &error_fatal);
-    isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
 
     i8042 = isa_create_simple(isa_bus, TYPE_I8042);
     if (!(pcms->vmport != ON_OFF_AUTO_ON)) {

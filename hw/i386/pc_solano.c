@@ -126,6 +126,7 @@ static void pc_init(MachineState *machine)
     DeviceState *lpc_dev;
     ISABus *isa_bus;
     qemu_irq *i8259;
+    ISADevice *i8254;
     MC146818RtcState *rtc;
     qemu_irq smi_irq;
     GSIState *gsi_state;
@@ -296,6 +297,10 @@ static void pc_init(MachineState *machine)
     }
     g_free(i8259);
 
+    fprintf(stderr, "PC: Setting up timers\n");
+    i8254 = i8254_pit_init(isa_bus, 0x40, 0, NULL);
+    object_property_set_link(OBJECT(pcms->pcspk), "i8254", OBJECT(i8254), &error_fatal);
+    isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
     ioapic_init_gsi(gsi_state, phb);
 
     fprintf(stderr, "PC: Passing control to the BIOS\n");
