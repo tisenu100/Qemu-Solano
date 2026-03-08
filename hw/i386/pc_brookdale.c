@@ -301,19 +301,19 @@ static void pc_init(MachineState *machine)
     sst_mount_flash(sst, pcms->flash[0]);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(sst_flash), &error_fatal);
 
-    fprintf(stderr, "PC: Setting up interrupts\n");
-    i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
-    for (int i = 0; i < ISA_NUM_IRQS; i++) {
-        gsi_state->i8259_irq[i] = i8259[i];
-    }
-    g_free(i8259);
-
     fprintf(stderr, "PC: Setting up timers\n");
     i8254 = kvm_pit_in_kernel() ? kvm_pit_init(isa_bus, 0x40) :           /*     KVM PIT     */ \
                                   i8254_pit_init(isa_bus, 0x40, 0, NULL); /* Legacy 8254 PIT */
     object_property_set_link(OBJECT(pcms->pcspk), "pit", OBJECT(i8254), &error_fatal);
     isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
     ioapic_init_gsi(gsi_state, phb);
+
+    fprintf(stderr, "PC: Setting up interrupts\n");
+    i8259 = i8259_init(isa_bus, x86_allocate_cpu_irq());
+    for (int i = 0; i < ISA_NUM_IRQS; i++) {
+        gsi_state->i8259_irq[i] = i8259[i];
+    }
+    g_free(i8259);
 
     fprintf(stderr, "PC: Passing control to the BIOS\n");
 }
