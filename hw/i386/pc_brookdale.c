@@ -45,6 +45,7 @@
 #include "hw/ide/pci.h"
 #include "hw/core/irq.h"
 #include "system/kvm.h"
+#include "kvm/kvm_i386.h"
 #include "hw/i386/kvm/clock.h"
 #include "hw/core/sysbus.h"
 #include "hw/i2c/smbus_eeprom.h"
@@ -308,7 +309,8 @@ static void pc_init(MachineState *machine)
     g_free(i8259);
 
     fprintf(stderr, "PC: Setting up timers\n");
-    i8254 = i8254_pit_init(isa_bus, 0x40, 0, NULL);
+    i8254 = kvm_pit_in_kernel() ? kvm_pit_init(isa_bus, 0x40) :           /*     KVM PIT     */ \
+                                  i8254_pit_init(isa_bus, 0x40, 0, NULL); /* Legacy 8254 PIT */
     object_property_set_link(OBJECT(pcms->pcspk), "i8254", OBJECT(i8254), &error_fatal);
     isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
     ioapic_init_gsi(gsi_state, phb);
