@@ -74,8 +74,8 @@ static int agp_slot_get_pirq(PCIDevice *pci_dev, int pin)
     return (0x3210 >> (pin * 4)) & 7;
 }
 
-/* Board IRQ table used by the ABit AB-BL7 */
-/* To add a device: -device rtl8139,bus=pci.2,addr=04.0 will place an RTL8139 on Slot 1 */
+/* Board IRQ table used by the ABit AB-BD7 */
+/* To add a device: -device rtl8139,bus=pci.2,addr=01.0 will place an RTL8139 on Slot 1 */
 static int pci_slots_get_pirq(PCIDevice *pci_dev, int pin)
 {
     int ret = 0;
@@ -180,7 +180,7 @@ static void pc_init(MachineState *machine)
         On the Intel 845 it is configured according to the TOM register (C4h)
         400h = 4000_0000
 
-        The AOpen board gives this result
+        The ABit board gives this result
         pci_cfg_write i845 00:00.0 @0xc4 <- 0x2000
         
         2000h = 2_0000_0000
