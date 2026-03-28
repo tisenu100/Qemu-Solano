@@ -27,31 +27,15 @@
 #include "exec/target_page.h"
 #include "exec/helper-proto.h"
 #include "hw/core/cpu.h"
+#include "hw/hppa/hppa_hardware.h"
 #include "trace.h"
 
-/*
- * 64-bit (PA-RISC 2.0) machines are assumed to run PA-8700, and 32-bit
- * machines 7300LC.  This should give 44 and 32 bits of physical address
- * space respectively.
- *
- *   CPU model        Physical address space bits
- *   PA-7000--7300LC  32
- *   PA-8000--8600    40
- *   PA-8700--8900    44
- *
- * FIXME: However, the SeaBIOS firmware that is that tested against
- * uses 40-bit physical addresses, despite supposedly running a C3700
- * with a PA-8700 cpu, so use 40-bits for 64-bit.
- */
-#define HPPA_PHYS_ADDR_SPACE_BITS_PA20 40
-#define HPPA_PHYS_ADDR_SPACE_BITS_PA1X 32
-
-hwaddr hppa_abs_to_phys_pa1x(vaddr addr)
+hwaddr hppa_abs_to_phys_pa1x(uint8_t phys_addr_bits, vaddr addr)
 {
-    return extract64(addr, 0, HPPA_PHYS_ADDR_SPACE_BITS_PA1X);
+    return extract64(addr, 0, phys_addr_bits);
 }
 
-hwaddr hppa_abs_to_phys_pa2_w1(vaddr addr)
+hwaddr hppa_abs_to_phys_pa2_w1(uint8_t phys_addr_bits, vaddr addr)
 {
     /*
      * Figure H-8 "62-bit Absolute Accesses when PSW W-bit is 1" describes
@@ -64,11 +48,10 @@ hwaddr hppa_abs_to_phys_pa2_w1(vaddr addr)
      * Since the supported physical address space is below 54 bits, the
      * H-8 algorithm is moot and all that is left is to truncate.
      */
-    QEMU_BUILD_BUG_ON(HPPA_PHYS_ADDR_SPACE_BITS_PA20 > 54);
-    return sextract64(addr, 0, HPPA_PHYS_ADDR_SPACE_BITS_PA20);
+    return sextract64(addr, 0, phys_addr_bits);
 }
 
-hwaddr hppa_abs_to_phys_pa2_w0(vaddr addr)
+hwaddr hppa_abs_to_phys_pa2_w0(uint8_t phys_addr_bits, vaddr addr)
 {
     /*
      * See Figure H-10, "Absolute Accesses when PSW W-bit is 0",
@@ -84,12 +67,13 @@ hwaddr hppa_abs_to_phys_pa2_w0(vaddr addr)
         /*
          * PDC address space:
          * Figures H-10 and H-11 of the parisc2.0 spec do not specify
-         * where to map into the 64-bit PDC address space.
-         * We map with an offset which equals the 32-bit address, which
-         * is what can be seen on physical machines too.
+         * where to map into the 64-bit PDC address space, but verification
+         * on physical A500, C3700 and C8000 machines show that PDC is always
+         * mapped at 0xfffffff0f0000000, independed if the CPU has 40 or 44
+         * physical bits.
          */
         addr = (uint32_t)addr;
-        addr |= -1ull << (HPPA_PHYS_ADDR_SPACE_BITS_PA20 - 4);
+        addr |= ((uint64_t) FIRMWARE_HIGH) << 32;
     }
     return addr;
 }
@@ -231,15 +215,16 @@ int hppa_get_physical_address(CPUHPPAState *env, vaddr addr, int mmu_idx,
 
     /* Virtual translation disabled.  Map absolute to physical.  */
     if (MMU_IDX_MMU_DISABLED(mmu_idx)) {
+        const uint8_t phys_addr_bits = hppa_phys_addr_bits(env);
         switch (mmu_idx) {
         case MMU_ABS_W_IDX:
-            phys = hppa_abs_to_phys_pa2_w1(addr);
+            phys = hppa_abs_to_phys_pa2_w1(phys_addr_bits, addr);
             break;
         case MMU_ABS_IDX:
             if (hppa_is_pa20(env)) {
-                phys = hppa_abs_to_phys_pa2_w0(addr);
+                phys = hppa_abs_to_phys_pa2_w0(phys_addr_bits, addr);
             } else {
-                phys = hppa_abs_to_phys_pa1x(addr);
+                phys = hppa_abs_to_phys_pa1x(phys_addr_bits, addr);
             }
             break;
         default:
@@ -580,7 +565,7 @@ static void itlbt_pa20(CPUHPPAState *env, target_ulong r1,
     /* Align per the page size. */
     ent->pa &= TARGET_PAGE_MASK << mask_shift;
     /* Ignore the bits beyond physical address space. */
-    ent->pa = sextract64(ent->pa, 0, HPPA_PHYS_ADDR_SPACE_BITS_PA20);
+    ent->pa = sextract64(ent->pa, 0, hppa_phys_addr_bits(env));
 
     ent->t = extract64(r2, 61, 1);
     ent->d = extract64(r2, 60, 1);

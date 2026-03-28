@@ -197,11 +197,6 @@ typedef struct {
  *    used to provide @cpu_index to socket number mapping, allowing
  *    a machine to group CPU threads belonging to the same socket/package
  *    Returns: socket number given cpu_index belongs to.
- * @hw_version:
- *    Value of QEMU_VERSION when the machine was added to QEMU.
- *    Set only by old machines because they need to keep
- *    compatibility on code that exposed QEMU_VERSION to guests in
- *    the past (and now use qemu_hw_version()).
  * @possible_cpu_arch_ids:
  *    Returns an array of @CPUArchId architecture-dependent CPU IDs
  *    which includes CPU IDs for present and possible to hotplug CPUs.
@@ -297,7 +292,6 @@ struct MachineClass {
     const char *default_display;
     const char *default_nic;
     GPtrArray *compat_props;
-    const char *hw_version;
     ram_addr_t default_ram_size;
     const char *default_cpu_type;
     bool default_kernel_irqchip_split;
@@ -314,7 +308,6 @@ struct MachineClass {
     bool auto_enable_numa_with_memhp;
     bool auto_enable_numa_with_memdev;
     bool ignore_boot_device_suffixes;
-    bool smbus_no_migration_support;
     bool nvdimm_supported;
     bool numa_mem_supported;
     bool auto_enable_numa;
@@ -864,14 +857,5 @@ extern const size_t hw_compat_4_2_len;
 
 extern GlobalProperty hw_compat_4_1[];
 extern const size_t hw_compat_4_1_len;
-
-extern GlobalProperty hw_compat_4_0[];
-extern const size_t hw_compat_4_0_len;
-
-extern GlobalProperty hw_compat_3_1[];
-extern const size_t hw_compat_3_1_len;
-
-extern GlobalProperty hw_compat_3_0[];
-extern const size_t hw_compat_3_0_len;
 
 #endif

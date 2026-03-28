@@ -303,7 +303,7 @@ static IOMMUTLBEntry astro_translate_iommu(IOMMUMemoryRegion *iommu,
      * language which not-coincidentally matches the PSW.W=0 mapping.
      */
     if (addr <= UINT32_MAX) {
-        entry = hppa_abs_to_phys_pa2_w0(addr);
+        entry = hppa_abs_to_phys_pa2_w0(s->phys_addr_bits, addr);
     } else {
         entry = addr;
     }
@@ -430,10 +430,11 @@ static void elroy_pcihost_realize(DeviceState *dev, Error **errp)
     PCIHostState *phb = PCI_HOST_BRIDGE(dev);
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
     Object *obj = OBJECT(s);
+    g_autofree char *elroy_mmio_name = NULL;
 
     /* Elroy config access from CPU.  */
     memory_region_init_io(&s->this_mem, obj, &elroy_chip_ops,
-                          s, "elroy", 0x2000);
+                          s, dev->id, 0x2000);
 
     /* Elroy PCI config. */
     memory_region_init_io(&phb->conf_mem, obj,
@@ -448,7 +449,8 @@ static void elroy_pcihost_realize(DeviceState *dev, Error **errp)
                                 &phb->data_mem);
 
     /* Elroy PCI bus memory.  */
-    memory_region_init(&s->pci_mmio, obj, "pci-mmio", UINT64_MAX);
+    elroy_mmio_name = g_strdup_printf("%s-pci-mmio", dev->id);
+    memory_region_init(&s->pci_mmio, obj, elroy_mmio_name, UINT64_MAX);
     memory_region_init_io(&s->pci_io, obj, &unassigned_io_ops, obj,
                             "pci-isa-mmio",
                             ((uint32_t) IOS_DIST_BASE_SIZE) / ROPES_PER_IOC);
@@ -910,6 +912,10 @@ static void astro_realize(DeviceState *obj, Error **errp)
     }
 }
 
+static const Property astro_props[] = {
+    DEFINE_PROP_UINT8("phys-addr-bits", AstroState, phys_addr_bits, 32),
+};
+
 static void astro_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -922,6 +928,8 @@ static void astro_class_init(ObjectClass *klass, const void *data)
      * be created without that hardware
      */
     dc->user_creatable = false;
+
+    device_class_set_props(dc, astro_props);
 }
 
 static const TypeInfo astro_chip_info = {

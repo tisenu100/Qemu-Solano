@@ -4,8 +4,9 @@
 # (e.g. tests that fetch assets from the internet) should be put into
 # the 'thorough' category instead.
 
-# Most tests run too slow with TCI enabled, so skip the functional tests there
-if get_option('tcg_interpreter')
+# Most tests run too slow with TCI enabled, and they haven't been adapted
+# to Windows yet, so skip the functional tests in these environments
+if get_option('tcg_interpreter') or host_os == 'windows'
   subdir_done()
 endif
 
@@ -74,9 +75,11 @@ foreach speed : ['quick', 'thorough']
       test_deps += [qemu_img]
     endif
     test_env.set('QEMU_TEST_QEMU_BINARY', test_emulator.full_path())
-    test_env.set('QEMU_BUILD_ROOT', meson.project_build_root())
-    test_env.set('PYTHONPATH', meson.project_source_root() / 'python:' +
-                               meson.current_source_dir())
+    test_env.set('MESON_BUILD_ROOT', meson.project_build_root())
+    test_env.prepend('PYTHONPATH',
+                     meson.project_source_root() / 'python',
+                     meson.current_source_dir(),
+                     separator : ':')
 
     # Define the GDB environment variable if gdb is available.
     gdb = get_option('gdb')
@@ -95,8 +98,11 @@ foreach speed : ['quick', 'thorough']
       teststamp = testname + '.tstamp'
       test_precache_env = environment()
       test_precache_env.set('QEMU_TEST_PRECACHE', meson.current_build_dir() / teststamp)
-      test_precache_env.set('PYTHONPATH', meson.project_source_root() / 'python:' +
-                                          meson.current_source_dir())
+      test_precache_env.set('MESON_BUILD_ROOT', meson.project_build_root())
+      test_precache_env.prepend('PYTHONPATH',
+                                meson.project_source_root() / 'python',
+                                meson.current_source_dir(),
+                                separator : ':')
       precache = custom_target('func-precache-' + testname,
                                output: teststamp,
                                command: [python, testpath],

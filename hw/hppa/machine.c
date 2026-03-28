@@ -179,18 +179,20 @@ static uint64_t linux_kernel_virt_to_phys(void *opaque, uint64_t addr)
     return addr;
 }
 
+static HPPACPU *cpu[HPPA_MAX_CPUS];
+static uint64_t firmware_entry;
+
 static uint64_t translate_pa10(void *dummy, uint64_t addr)
 {
-    return hppa_abs_to_phys_pa1x(addr);
+    const uint8_t pa_bits = hppa_phys_addr_bits(&cpu[0]->env);
+    return hppa_abs_to_phys_pa1x(pa_bits, addr);
 }
 
 static uint64_t translate_pa20(void *dummy, uint64_t addr)
 {
-    return hppa_abs_to_phys_pa2_w0(addr);
+    const uint8_t pa_bits = hppa_phys_addr_bits(&cpu[0]->env);
+    return hppa_abs_to_phys_pa2_w0(pa_bits, addr);
 }
-
-static HPPACPU *cpu[HPPA_MAX_CPUS];
-static uint64_t firmware_entry;
 
 static void fw_cfg_boot_set(void *opaque, const char *boot_device,
                             Error **errp)
@@ -304,6 +306,8 @@ static TranslateFn *machine_HP_common_init_cpus(MachineState *machine)
 
     for (unsigned int i = 0; i < smp_cpus; i++) {
         g_autofree char *name = g_strdup_printf("cpu%u-io-eir", i);
+        g_autofree char *cflush_name = NULL;
+        MemoryRegion *cflush;
 
         cpu_region = g_new(MemoryRegion, 1);
         memory_region_init_io(cpu_region, OBJECT(cpu[i]), &hppa_io_eir_ops,
@@ -311,6 +315,24 @@ static TranslateFn *machine_HP_common_init_cpus(MachineState *machine)
         memory_region_add_subregion(addr_space,
                                     translate(NULL, CPU_HPA + i * 0x1000),
                                     cpu_region);
+
+        if (!hppa_is_pa20(&cpu[0]->env)) {
+            continue;
+        }
+
+        /*
+         * HP-UX 11 64-bit reads a word from address CPU_HPA + 0x500
+         * while flushing the cache of a T600, which was the first
+         * server with a 64-bit PA-RISC 2.0 CPU.
+         * We return 0, since the value isn't used anyway.
+         */
+        cflush_name = g_strdup_printf("cpu%u-T600-cacheflush", i);
+        cflush = g_new(MemoryRegion, 1);
+        memory_region_init_io(cflush, NULL, &hppa_pci_ignore_ops,
+                              NULL, cflush_name, 4);
+        memory_region_add_subregion(addr_space,
+                              translate(NULL, CPU_HPA + i * 0x1000 + 0x500),
+                              cflush);
     }
 
     /* RTC and DebugOutputPort on CPU #0 */
@@ -380,18 +402,15 @@ static void machine_HP_common_init_tail(MachineState *machine, PCIBus *pci_bus,
 
     if (pci_bus && hppa_is_pa20(&cpu[0]->env)) {
         /* BMC board: HP Diva GSP PCI card */
-        dev = qdev_new("diva-gsp");
-        if (dev && !object_property_get_bool(OBJECT(dev), "disable", NULL)) {
-            pci_dev = pci_new_multifunction(PCI_DEVFN(2, 0), "diva-gsp");
-            if (!lasi_dev) {
-                /* bind default keyboard/serial to Diva card */
-                qdev_prop_set_chr(DEVICE(pci_dev), "chardev1", serial_hd(0));
-                qdev_prop_set_chr(DEVICE(pci_dev), "chardev2", serial_hd(1));
-                qdev_prop_set_chr(DEVICE(pci_dev), "chardev3", serial_hd(2));
-                qdev_prop_set_chr(DEVICE(pci_dev), "chardev4", serial_hd(3));
-            }
-            pci_realize_and_unref(pci_dev, pci_bus, &error_fatal);
+        pci_dev = pci_new_multifunction(PCI_DEVFN(2, 0), "diva-gsp");
+        if (!lasi_dev) {
+            /* bind default keyboard/serial to Diva card */
+            qdev_prop_set_chr(DEVICE(pci_dev), "chardev1", serial_hd(0));
+            qdev_prop_set_chr(DEVICE(pci_dev), "chardev2", serial_hd(1));
+            qdev_prop_set_chr(DEVICE(pci_dev), "chardev3", serial_hd(2));
+            qdev_prop_set_chr(DEVICE(pci_dev), "chardev4", serial_hd(3));
         }
+        pci_realize_and_unref(pci_dev, pci_bus, &error_fatal);
     }
 
     /* create USB OHCI controller for USB keyboard & mouse on Astro machines */
@@ -508,7 +527,7 @@ static void machine_HP_common_init_tail(MachineState *machine, PCIBus *pci_bus,
             }
 
             load_image_targphys(initrd_filename, initrd_base, initrd_size,
-                                NULL);
+                                &error_fatal);
             cpu[0]->env.initrd_base = initrd_base;
             cpu[0]->env.initrd_end  = initrd_base + initrd_size;
         }
@@ -685,6 +704,9 @@ static AstroState *astro_init(void)
     DeviceState *dev;
 
     dev = qdev_new(TYPE_ASTRO_CHIP);
+    object_property_set_int(OBJECT(dev), "phys-addr-bits",
+                            hppa_phys_addr_bits(&cpu[0]->env),
+                            &error_abort);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     return ASTRO_CHIP(dev);
@@ -801,13 +823,13 @@ static void hppa_machine_common_class_init(ObjectClass *oc, const void *data)
 static void HP_B160L_machine_init_class_init(ObjectClass *oc, const void *data)
 {
     static const char * const valid_cpu_types[] = {
-        TYPE_HPPA_CPU,
+        TYPE_HPPA_CPU_PA_7300LC,
         NULL
     };
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "HP B160L workstation";
-    mc->default_cpu_type = TYPE_HPPA_CPU;
+    mc->default_cpu_type = TYPE_HPPA_CPU_PA_7300LC;
     mc->valid_cpu_types = valid_cpu_types;
     mc->init = machine_HP_B160L_init;
     mc->is_default = true;
@@ -817,13 +839,13 @@ static void HP_B160L_machine_init_class_init(ObjectClass *oc, const void *data)
 static void HP_C3700_machine_init_class_init(ObjectClass *oc, const void *data)
 {
     static const char * const valid_cpu_types[] = {
-        TYPE_HPPA64_CPU,
+        TYPE_HPPA_CPU_PA_8700,
         NULL
     };
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "HP C3700 workstation";
-    mc->default_cpu_type = TYPE_HPPA64_CPU;
+    mc->default_cpu_type = TYPE_HPPA_CPU_PA_8700;
     mc->valid_cpu_types = valid_cpu_types;
     mc->init = machine_HP_C3700_init;
     mc->max_cpus = HPPA_MAX_CPUS;
@@ -833,13 +855,13 @@ static void HP_C3700_machine_init_class_init(ObjectClass *oc, const void *data)
 static void HP_A400_machine_init_class_init(ObjectClass *oc, const void *data)
 {
     static const char * const valid_cpu_types[] = {
-        TYPE_HPPA64_CPU,
+        TYPE_HPPA_CPU_PA_8500,
         NULL
     };
     MachineClass *mc = MACHINE_CLASS(oc);
 
-    mc->desc = "HP A400-44 workstation";
-    mc->default_cpu_type = TYPE_HPPA64_CPU;
+    mc->desc = "HP A400-44 server";
+    mc->default_cpu_type = TYPE_HPPA_CPU_PA_8500;
     mc->valid_cpu_types = valid_cpu_types;
     mc->init = machine_HP_A400_init;
     mc->max_cpus = HPPA_MAX_CPUS;
@@ -849,13 +871,18 @@ static void HP_A400_machine_init_class_init(ObjectClass *oc, const void *data)
 static void HP_715_machine_init_class_init(ObjectClass *oc, const void *data)
 {
     static const char * const valid_cpu_types[] = {
-        TYPE_HPPA_CPU,
+        TYPE_HPPA_CPU_PA_7300LC,
         NULL
     };
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "HP 715/64 workstation";
-    mc->default_cpu_type = TYPE_HPPA_CPU;
+    /*
+     * Although the 715 workstation should use a 7100LC, it can be safely
+     * modeled as a 7300LC as the difference is a moving of the L1 data cache
+     * to on-chip.
+     */
+    mc->default_cpu_type = TYPE_HPPA_CPU_PA_7300LC;
     mc->valid_cpu_types = valid_cpu_types;
     mc->init = machine_HP_715_init;
     /* can only support up to max. 8 CPUs due inventory major numbers */
