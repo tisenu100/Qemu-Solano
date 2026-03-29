@@ -334,7 +334,6 @@ static void pc_brookdale_machine_options(MachineClass *m)
     pcmc->has_reserved_memory = true;
     pcmc->enforce_amd_1tb_hole = false;
     pcmc->isa_bios_alias = false;
-    pcmc->pvh_enabled = false;
     pcmc->kvmclock_create_always = true;
 
     m->family = "pc_brookdale";
