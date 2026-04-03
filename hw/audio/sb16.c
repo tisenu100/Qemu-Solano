@@ -1800,8 +1800,8 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
 
     s->pic = isa_bus_get_irq(bus, s->irq);
 
-    /* k = ISADMA_GET_CLASS(s->isa_hdma);
-    k->register_channel(s->isa_hdma, s->hdma, SB_read_DMA, s); */
+    k = ISADMA_GET_CLASS(s->isa_hdma);
+    k->register_channel(s->isa_hdma, s->hdma, SB_read_DMA, s);
     
 
 
