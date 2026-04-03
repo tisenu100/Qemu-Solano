@@ -1113,7 +1113,8 @@ static void complete (SB16State *s)
             break;
 
         case 0xe2:
-            d0 = dsp_get_data (s);s->e2_valadd += ((uint8_t) d0) ^ s->e2_valxor;
+            d0 = dsp_get_data (s);
+            s->e2_valadd += ((uint8_t) d0) ^ s->e2_valxor;
             s->e2_valxor = (s->e2_valxor >> 2) | (s->e2_valxor << 6);
             break;
 
@@ -1553,34 +1554,6 @@ static int write_audio (SB16State *s, int nchan, int dma_pos,
     return net;
 }
 
-static int SB_write_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
-{
-    SB16State *s = opaque;
-    IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
-    IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
-    uint8_t tmpbuf[4096];
-    int to_copy, copied;
-
-    to_copy = MIN(s->left_till_irq, dma_len - dma_pos);
-    if (to_copy > (int)sizeof(tmpbuf)) {
-        to_copy = sizeof(tmpbuf);
-    }
-    /* silence 4 now */
-    memset(tmpbuf, (s->fmt_bits == 8 && !s->fmt_signed) ? 0x80 : 0x00, to_copy);
-
-    copied = k->write_memory(isa_dma, nchan, tmpbuf, dma_pos, to_copy);
-
-    dma_pos = (dma_pos + copied) % dma_len;
-    s->left_till_irq -= copied;
-
-    if (s->left_till_irq <= 0) {
-        s->mixer_regs[0x82] |= (nchan & 4) ? 2 : 1;
-        qemu_irq_raise (s->pic);
-        s->left_till_irq = s->block_size;
-    }
-
-    return dma_pos;
-}
 
 static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 {
@@ -1827,15 +1800,14 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
 
     s->pic = isa_bus_get_irq(bus, s->irq);
 
-    k = ISADMA_GET_CLASS(s->isa_hdma);
-    k->register_channel(s->isa_hdma, s->hdma, SB_read_DMA, s);
+    /* k = ISADMA_GET_CLASS(s->isa_hdma);
+    k->register_channel(s->isa_hdma, s->hdma, SB_read_DMA, s); */
     
-    k->register_channel(s->isa_hdma, s->hdma, SB_write_DMA, s);
-    k->register_channel(s->isa_dma, s->dma, SB_write_DMA, s);
+
 
     s->mixer_regs[0x80] = magic_of_irq (s->irq);
     s->mixer_regs[0x81] = (1 << s->dma) | (1 << s->hdma);
-    s->mixer_regs[0x82] = 0x00;
+    s->mixer_regs[0x82] = 2 << 5;
 
     s->csp_regs[5] = 1;
     s->csp_regs[9] = 0xf8;
