@@ -128,7 +128,8 @@ void pc_solano_init(MachineState *machine,                                      
     }
 
     if((machine->ram_size < min_assignable_memory) || (machine->ram_size > max_assignable_memory)) {
-        error_printf("FATAL! Assigning memory %s %dMB\n", (machine->ram_size > max_assignable_memory) ? "beyond" : "below", (int)(machine->ram_size >> 10));
+        error_printf("FATAL! Assigning memory %s %dMB\n", (machine->ram_size > max_assignable_memory) ? "beyond" : "below", \
+                                                          (int)(((machine->ram_size > max_assignable_memory) ? max_assignable_memory : min_assignable_memory) >> 10));
         exit(EXIT_FAILURE);
     }
 
