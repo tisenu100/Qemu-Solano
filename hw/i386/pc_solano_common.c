@@ -84,7 +84,7 @@ void pc_solano_init(MachineState *machine,                                      
                     uint16_t ac97_vendor,            /* AC97 Mixer Vendor                        */  \
                     uint16_t ac97_device,            /* AC97 Mixer Device                        */  \
                     enum sdram_type ram_arch,        /* RAM architecture                         */  \
-                    void(*sio_init)(ISABus *bus))    /* Super I/O                                */
+                    void(*sio_create)(ISABus *bus))  /* Super I/O                                */
 {
     PCMachineState *pcms = PC_MACHINE(machine);
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
@@ -194,7 +194,7 @@ void pc_solano_init(MachineState *machine,                                      
 
     fprintf(stderr, "PC: Setting up the Super I/O\n");
     pc_basic_device_init_simple(pcms, isa_bus, x86ms->gsi);
-    sio_init(isa_bus); /* The Super I/O init function. Referenced from the board setup */
+    sio_create(isa_bus); /* The Super I/O init function. Referenced from the board setup */
     
     fprintf(stderr, "PC: Setting up IDE\n");
     ide_pci_dev = pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 1), TYPE_ICH2_IDE_PCI_DEVICE);

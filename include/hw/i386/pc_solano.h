@@ -46,7 +46,7 @@ void pc_solano_init(MachineState *machine,                                      
                     uint16_t ac97_vendor,            /* AC97 Mixer Vendor                        */  \
                     uint16_t ac97_device,            /* AC97 Mixer Device                        */  \
                     enum sdram_type ram_arch,        /* RAM architecture                         */  \
-                    void(*sio_init)(ISABus *bus));   /* Super I/O                                */
+                    void(*sio_create)(ISABus *bus)); /* Super I/O                                */
 
 void pc_solano_common_machine_options(MachineClass *m);
 
