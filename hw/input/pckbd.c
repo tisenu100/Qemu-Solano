@@ -388,8 +388,7 @@ static void kbd_write_command(void *opaque, hwaddr addr,
     /* Standard i8042 command set */
     case KBD_CCMD_READ_MODE:
         kbd_queue(s, s->mode, 0);
-    break;
-
+        break;
     case KBD_CCMD_WRITE_MODE:
     case KBD_CCMD_WRITE_OBUF:
     case KBD_CCMD_WRITE_AUX_OBUF:
@@ -408,7 +407,7 @@ static void kbd_write_command(void *opaque, hwaddr addr,
         kbd_queue(s, 0x00, 0);
         break;
     case KBD_CCMD_SELF_TEST:
-        s->status |= 0x18;
+        s->status |= KBD_STAT_SELFTEST;
         kbd_queue(s, 0x55, 0);
         break;
     case KBD_CCMD_KBD_TEST:
