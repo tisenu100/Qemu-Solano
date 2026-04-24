@@ -128,7 +128,8 @@ void pc_solano_init(MachineState *machine,                                      
     }
 
     if((machine->ram_size < min_assignable_memory) || (machine->ram_size > max_assignable_memory)) {
-        error_printf("FATAL! Assigning memory %s %dMB\n", (machine->ram_size > max_assignable_memory) ? "beyond" : "below", (int)(machine->ram_size >> 10));
+        error_printf("FATAL! Assigning memory %s %dMB\n", (machine->ram_size > max_assignable_memory) ? "beyond" : "below", \
+                                                          (int)(((machine->ram_size > max_assignable_memory) ? max_assignable_memory : min_assignable_memory) >> 10));
         exit(EXIT_FAILURE);
     }
 
@@ -231,11 +232,6 @@ void pc_solano_init(MachineState *machine,                                      
     fprintf(stderr, "PC: Setting up AC97\n");
     ac97 = pci_new(PCI_DEVFN(0x1f, 5), "AC97");
 
-    /* 
-       Realtek ALC201
-       Normally an AD1885 is used however it's prone to cause audio issues.
-       ALC201 was used by some AOpen PGA370 boards so use that instead.
-    */
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-vendor", ac97_vendor);
     qdev_prop_set_uint16(DEVICE(ac97), "ac97-device", ac97_device);
 
