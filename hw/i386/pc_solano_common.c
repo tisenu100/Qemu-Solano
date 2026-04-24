@@ -191,8 +191,6 @@ void pc_solano_init(MachineState *machine,                                      
         x86_register_ferr_irq(x86ms->gsi[13]);
     }
 
-    pc_vga_init(isa_bus, pcms->pcibus);
-
     fprintf(stderr, "PC: Setting up the Super I/O\n");
     pc_basic_device_init_simple(pcms, isa_bus, x86ms->gsi);
     sio_create(isa_bus); /* The Super I/O init function. Referenced from the board setup */
@@ -255,6 +253,9 @@ void pc_solano_init(MachineState *machine,                                      
         gsi_state->i8259_irq[i] = i8259[i];
     }
     g_free(i8259);
+
+    fprintf(stderr, "PC: Starting up VGA\n");
+    pc_vga_init(isa_bus, pcms->pcibus);
 
     fprintf(stderr, "PC: Passing control to the BIOS\n");
 }
