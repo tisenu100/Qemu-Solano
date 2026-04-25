@@ -188,8 +188,6 @@ static void Adlib_fini (AdlibState *s)
 }
 
 static MemoryRegionPortio adlib_portio_list[] = {
-    { 0, 4, 1, .read = adlib_read, .write = adlib_write, },
-    { 0, 2, 1, .read = adlib_read, .write = adlib_write, },
     { 0x388, 4, 1, .read = adlib_read, .write = adlib_write, },
     PORTIO_END_OF_LIST(),
 };
@@ -243,7 +241,7 @@ static void adlib_realizefn (DeviceState *dev, Error **errp)
 
 static const Property adlib_properties[] = {
     DEFINE_AUDIO_PROPERTIES(AdlibState, audio_be),
-    DEFINE_PROP_UINT32 ("iobase",  AdlibState, port, 0x220),
+    DEFINE_PROP_UINT32 ("iobase",  AdlibState, port, 0x388),
     DEFINE_PROP_UINT32 ("freq",    AdlibState, freq,  44100),
 };
 
