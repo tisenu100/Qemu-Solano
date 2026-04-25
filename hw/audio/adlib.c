@@ -1,8 +1,21 @@
 /*
- * QEMU Proxy for OPL2/3 emulation by MAME team
+ * Generic Adlib OPL2 Device using EMU8950 core.
+ * Copyright (c) 2026 re9177.
  *
+ * Originally: "QEMU Proxy for OPL2/3 emulation by MAME team"
+ * (Renamed as the MAME core has been replaced).
  * Copyright (c) 2004-2005 Vassili Karpov (malc)
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * 
+ * ---
+ * EMU8950 core:
+ * Copyright (c) 2001-2020 Mitsutaka Okazaki
+ * 
+ * The EMU8950 core is licensed under the MIT License:
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
