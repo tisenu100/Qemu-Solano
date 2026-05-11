@@ -1,8 +1,21 @@
 /*
- * QEMU Proxy for OPL2/3 emulation by MAME team
+ * Generic Adlib OPL2 Device using EMU8950 core.
+ * Copyright (c) 2026 re9177.
  *
+ * Originally: "QEMU Proxy for OPL2/3 emulation by MAME team"
+ * (Renamed as the MAME core has been replaced).
  * Copyright (c) 2004-2005 Vassili Karpov (malc)
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * 
+ * ---
+ * EMU8950 core:
+ * Copyright (c) 2001-2020 Mitsutaka Okazaki
+ * 
+ * The EMU8950 core is licensed under the MIT License:
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
@@ -46,7 +59,7 @@
         } \
     } while (0)
 
-#include "fmopl.h"
+#include "emu8950.h"
 #define SHIFT 1
 
 #define TYPE_ADLIB "adlib"
@@ -58,7 +71,6 @@ struct AdlibState {
     AudioBackend *audio_be;
     uint32_t freq;
     uint32_t port;
-    int ticking[2];
     int enabled;
     int active;
     int bufpos;
@@ -68,26 +80,9 @@ struct AdlibState {
     int16_t *mixbuf;
     SWVoiceOut *voice;
     int left, pos, samples;
-    FM_OPL *opl;
+    OPL *opl;
     PortioList port_list;
 };
-
-static void adlib_stop_opl_timer (AdlibState *s, size_t n)
-{
-    OPLTimerOver (s->opl, n);
-    s->ticking[n] = 0;
-}
-
-static void adlib_kill_timers (AdlibState *s)
-{
-    size_t i;
-
-    for (i = 0; i < 2; ++i) {
-        if (s->ticking[i]) {
-            adlib_stop_opl_timer(s, i);
-        }
-    }
-}
 
 static void adlib_write(void *opaque, uint32_t nport, uint32_t val)
 {
@@ -97,9 +92,7 @@ static void adlib_write(void *opaque, uint32_t nport, uint32_t val)
     s->active = 1;
     audio_be_set_active_out(s->audio_be, s->voice, 1);
 
-    adlib_kill_timers (s);
-
-    OPLWrite (s->opl, a, val);
+    OPL_writeIO(s->opl, a, val);
 }
 
 static uint32_t adlib_read(void *opaque, uint32_t nport)
@@ -107,31 +100,11 @@ static uint32_t adlib_read(void *opaque, uint32_t nport)
     AdlibState *s = opaque;
     int a = nport & 3;
 
-    adlib_kill_timers (s);
-    return OPLRead (s->opl, a);
-}
-
-static void timer_handler (void *opaque, int c, double interval_Sec)
-{
-    AdlibState *s = opaque;
-    unsigned n = c & 1;
-#if DEBUG
-    double interval;
-    int64_t exp;
-#endif
-
-    if (interval_Sec == 0.0) {
-        s->ticking[n] = 0;
-        return;
+    if (!(a & 1)) {
+        return OPL_status(s->opl);
+    } else {
+        return OPL_readIO(s->opl);
     }
-
-    s->ticking[n] = 1;
-#if DEBUG
-    interval = NANOSECONDS_PER_SECOND * interval_Sec;
-    exp = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + interval;
-    s->exp[n] = exp;
-#endif
-
 }
 
 static int write_audio (AdlibState *s, int samples)
@@ -196,7 +169,9 @@ static void adlib_callback (void *opaque, int free)
         return;
     }
 
-    YM3812UpdateOne (s->opl, s->mixbuf + s->pos, samples);
+    for (int i = 0; i < samples; i++) {
+        s->mixbuf[s->pos + i] = OPL_calc(s->opl);
+    }
 
     while (samples) {
         written = write_audio (s, samples);
@@ -215,7 +190,7 @@ static void adlib_callback (void *opaque, int free)
 static void Adlib_fini (AdlibState *s)
 {
     if (s->opl) {
-        OPLDestroy (s->opl);
+        OPL_delete(s->opl);
         s->opl = NULL;
     }
 
@@ -226,8 +201,6 @@ static void Adlib_fini (AdlibState *s)
 }
 
 static MemoryRegionPortio adlib_portio_list[] = {
-    { 0, 4, 1, .read = adlib_read, .write = adlib_write, },
-    { 0, 2, 1, .read = adlib_read, .write = adlib_write, },
     { 0x388, 4, 1, .read = adlib_read, .write = adlib_write, },
     PORTIO_END_OF_LIST(),
 };
@@ -241,15 +214,15 @@ static void adlib_realizefn (DeviceState *dev, Error **errp)
         return;
     }
 
-    s->opl = OPLCreate (3579545, s->freq);
+    s->opl = OPL_new(3579545, s->freq);
     if (!s->opl) {
-        error_setg (errp, "OPLCreate %d failed", s->freq);
+        error_setg (errp, "OPL_new %d failed", s->freq);
         return;
     }
-    else {
-        OPLSetTimerHandler(s->opl, timer_handler, s);
-        s->enabled = 1;
-    }
+    
+    /* 0: Y8950, 1: YM3526, 2: YM3812 */
+    OPL_setChipType(s->opl, 2);
+    s->enabled = 1;
 
     as.freq = s->freq;
     as.nchannels = SHIFT;
@@ -281,7 +254,7 @@ static void adlib_realizefn (DeviceState *dev, Error **errp)
 
 static const Property adlib_properties[] = {
     DEFINE_AUDIO_PROPERTIES(AdlibState, audio_be),
-    DEFINE_PROP_UINT32 ("iobase",  AdlibState, port, 0x220),
+    DEFINE_PROP_UINT32 ("iobase",  AdlibState, port, 0x388),
     DEFINE_PROP_UINT32 ("freq",    AdlibState, freq,  44100),
 };
 

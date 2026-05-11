@@ -1418,6 +1418,19 @@ static void gd_menu_quit(GtkMenuItem *item, void *opaque)
     qmp_quit(NULL);
 }
 
+static void gd_menu_send_cad(GtkMenuItem *item, void *opaque)
+{
+    QemuConsole *con = NULL;
+
+    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_CTRL, true);
+    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_ALT, true);
+    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_DELETE, true);
+
+    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_DELETE, false);
+    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_ALT, false);
+    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_CTRL, false);
+}
+
 static void gd_menu_switch_vc(GtkMenuItem *item, void *opaque)
 {
     GtkDisplayState *s = opaque;
@@ -2201,12 +2214,17 @@ static GtkWidget *gd_create_menu_machine(GtkDisplayState *s)
 {
     GtkWidget *machine_menu;
     GtkWidget *separator;
+    GtkWidget *send_cad_item;
 
     machine_menu = gtk_menu_new();
     gtk_menu_set_accel_group(GTK_MENU(machine_menu), s->accel_group);
 
     s->pause_item = gtk_check_menu_item_new_with_mnemonic(_("_Pause"));
     gtk_menu_shell_append(GTK_MENU_SHELL(machine_menu), s->pause_item);
+
+    send_cad_item = gtk_menu_item_new_with_mnemonic(_("Send Ctrl+Alt+Del"));
+    gtk_menu_shell_append(GTK_MENU_SHELL(machine_menu), send_cad_item);
+    g_signal_connect(send_cad_item, "activate", G_CALLBACK(gd_menu_send_cad), s);
 
     separator = gtk_separator_menu_item_new();
     gtk_menu_shell_append(GTK_MENU_SHELL(machine_menu), separator);
