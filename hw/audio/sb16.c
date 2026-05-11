@@ -42,7 +42,7 @@
 #include "qapi/error.h"
 #include "qemu/fifo8.h"
 
-#include "ymf262.h"
+#include "opl3.h"
 
 #define DEBUG 0
 /* #define DEBUG_SB16_MOST */
@@ -117,10 +117,12 @@ struct SB16State {
     int32_t adpcm_valpred;
     int32_t adpcm_index;
 
-    void *ymf262;
+    opl3_chip ymf262;
+    uint16_t ymf262_reg;
+    int16_t *ymf262_mix;
+    unsigned int ymf262_samps;
+    uint8_t ymf262_status;
     SWVoiceOut *voice_opl;
-    int opl_ticking[2];
-    uint64_t opl_dexp[2];
     PortioList opl_portio_list;
     PortioList hack_portio_list;
 
@@ -171,66 +173,19 @@ static void sb16_update_voice_volume(SB16State *s)
     audio_be_set_volume_out(s->audio_be, s->voice, &vol);
 }
 
-static void sb16_update_opl_volume(SB16State *s)
-{
-    int ml_idx = (s->mixer_regs[0x30] >> 3) & 0x1f;
-    int mr_idx = (s->mixer_regs[0x31] >> 3) & 0x1f;
-    int fl_idx = (s->mixer_regs[0x34] >> 3) & 0x1f;
-    int fr_idx = (s->mixer_regs[0x35] >> 3) & 0x1f;
-
-    int32_t vol_l = (sb16_log_vol[ml_idx] * sb16_log_vol[fl_idx] * 0x8000) / 65025;
-    int32_t vol_r = (sb16_log_vol[mr_idx] * sb16_log_vol[fr_idx] * 0x8000) / 65025;
-
-    if (s->ymf262) {
-        ymf262_set_vol_lr(s->ymf262, vol_l, vol_r);
-    }
-}
-
 static void sb16_opl_callback(void *opaque, int free)
 {
     SB16State *s = opaque;
-    int samples = free >> 2;
+    unsigned int samples;
     
-    if (!s->ymf262 || !s->voice_opl) {
+    if (!s->voice_opl) {
         return;
     }
 
-    if (samples > 0 && s->ymf262) {
-        int bytes = samples * 4;
-        DEV_SMPL *buf_l = g_new(DEV_SMPL, samples);
-        DEV_SMPL *buf_r = g_new(DEV_SMPL, samples);
-        DEV_SMPL *bufs[2] = { buf_l, buf_r };
-        int16_t *interleaved = g_malloc(bytes);
+    samples = MIN((unsigned int)(free / 4), s->ymf262_samps);
 
-        ymf262_update_one(s->ymf262, samples, bufs);
-
-        for (int i = 0; i < samples; i++) {
-            interleaved[i * 2 + 0] = (int16_t)buf_l[i];
-            interleaved[i * 2 + 1] = (int16_t)buf_r[i];
-        }
-
-        audio_be_write(s->audio_be, s->voice_opl, interleaved, bytes);
-        g_free(buf_l);
-        g_free(buf_r);
-        g_free(interleaved);
-    }
-}
-
-static void sb16_opl_timer_handler(void *opaque, UINT8 c, UINT32 period)
-{
-    SB16State *s = opaque;
-    int64_t fuck = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-
-    uint64_t interval_ns = (uint64_t)((double)period * NANOSECONDS_PER_SECOND / 49716.0);
-    unsigned n = c & 1;
-
-    if (interval_ns == 0) {
-        s->opl_ticking[n] = 0;
-        return;
-    }
-
-    s->opl_ticking[n] = 1;
-    s->opl_dexp[n] = fuck + interval_ns;
+    OPL3_GenerateStream(&s->ymf262, s->ymf262_mix, samples);
+    audio_be_write(s->audio_be, s->voice_opl, s->ymf262_mix, samples * 4);    
 }
 
 static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
@@ -238,27 +193,55 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
     SB16State *s = opaque;
     uint32_t a = nport & 3;
     
-    if ((nport & 0xf00) != 0x300) {
-        if ((nport & 0xF) == 8) a = 0;
-	if ((nport & 0xF) == 9) a = 1;
+    audio_be_set_active_out(s->audio_be, s->voice_opl, 1);
+
+    switch (a) {
+    case 0:  /* bank-0 address latch */
+        s->ymf262_reg = val & 0xff;
+        break;
+    case 2:  /* bank-1 address latch */
+        s->ymf262_reg = (val & 0xff) | 0x100;
+        break;
+    case 1:  /* bank-0 data commit */
+    case 3:  /* bank-1 data commit; bank bit already in ymf262_reg */
+        /*
+         * Bank-0 reg 0x04 is OPL Timer Control. Nuked-OPL3 ignores it,
+         * so we synthesize the status byte here. Bit 7 = IRQ reset
+         * (clears status); else status reflects start+mask bits per
+         * AdLib/OPL3 semantics:
+         *   ctrl bit 0: T1 start    ctrl bit 6: T1 mask
+         *   ctrl bit 1: T2 start    ctrl bit 5: T2 mask
+         */
+        if (s->ymf262_reg == 0x04) {
+            if (val & 0x80) {
+                s->ymf262_status = 0;
+            } else {
+                uint8_t status = 0;
+                if ((val & 0x01) && !(val & 0x40)) {
+                    status |= 0x40;
+                }
+                if ((val & 0x02) && !(val & 0x20)) {
+                    status |= 0x20;
+                }
+                if (status) {
+                    status |= 0x80;
+                }
+                s->ymf262_status = status;
+            }
+        }
+        OPL3_WriteRegBuffered(&s->ymf262, s->ymf262_reg,
+                              val & 0xff);
+        break;
+    default:
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "ymf262: invalid port offset %d\n", a);
     }
-    if (s->voice_opl) {
-        audio_be_set_active_out(s->audio_be, s->voice_opl, 1);
-    }
-    ymf262_timer_over(s->ymf262, a); 
-    ymf262_write(s->ymf262, a, val);
 }
 
 static uint32_t sb16_opl_read(void *opaque, uint32_t nport)
 {
     SB16State *s = opaque;
-    uint32_t a = nport & 3;
-    if ((nport & 0xf00) != 0x300) {
-        if ((nport & 0xF) == 8) a = 0;
-        if ((nport & 0xF) == 9) a = 1;
-    }
-    ymf262_timer_over(s->ymf262, a); 
-    return ymf262_read(s->ymf262, a);
+    return s->ymf262_status;
 }
 
 static int mpu_can_receive(void *opaque)
@@ -298,7 +281,7 @@ static void mpu_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
             s->mpu_uart_mode = false;
             s->mpu_has_ack = true;
             fifo8_reset(&s->mpu_fifo);
-	for (int ch = 0; ch < 16; ch++) {
+	    for (int ch = 0; ch < 16; ch++) {
         	uint8_t all_notes_off[] = { 0xB0 | ch, 0x7B, 0x00 };
         	qemu_chr_fe_write_all(&s->mpu_chr, all_notes_off, 3);
     	}
@@ -1389,8 +1372,6 @@ static void reset_mixer (SB16State *s)
     for (i = 0x30; i < 0x48; i++) {
         s->mixer_regs[i] = 0xD8;
     }
-
-    sb16_update_opl_volume(s);
 }
 
 static void mixer_write_indexb(void *opaque, uint32_t nport, uint32_t val)
@@ -1483,7 +1464,6 @@ static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
         s->mixer_regs[s->mixer_nreg] = val;
         break;
     }
-    sb16_update_opl_volume(s);
     sb16_update_voice_volume(s);
 }
 
@@ -1685,7 +1665,6 @@ static int sb16_post_load (void *opaque, int version_id)
         control (s, 1);
         speaker (s, s->speaker);
     }
-    if (s->ymf262) ymf262_reset_chip(s->ymf262);
     return 0;
 }
 
@@ -1779,13 +1758,38 @@ static void sb16_initfn (Object *obj)
     s->cmd = -1;
 }
 
+static void ymf262_realize (SB16State *s, ISADevice *isadev)
+{
+    struct audsettings as = {
+        as.freq = 49716,
+        as.nchannels = 2,
+        as.fmt = AUDIO_FORMAT_S16,
+        as.big_endian = false,
+    };
+
+    OPL3_Reset (&s->ymf262, 49716);
+
+    s->voice_opl = audio_be_open_out(s->audio_be, s->voice_opl, "sb16-opl", s, sb16_opl_callback, &as);
+    
+    if (!s->voice_opl) {
+        warn_report("sb16: OPL3 audio voice open failed; FM disabled");
+        return;
+    }
+
+    s->ymf262_samps = audio_be_get_buffer_size_out(s->audio_be, s->voice_opl) / 4;
+    s->ymf262_mix = g_malloc0(s->ymf262_samps * 4);
+
+    isa_register_portio_list(isadev, &s->opl_portio_list, s->port, opl_portio_list, s, "sb16-opl");
+	isa_register_portio_list(isadev, &s->hack_portio_list, 0x388, opl_portio_list, s, "sb16-opl");
+}
+
+
 static void sb16_realizefn (DeviceState *dev, Error **errp)
 {
     ISADevice *isadev = ISA_DEVICE (dev);
     ISABus *bus = isa_bus_from_device(isadev);
     SB16State *s = SB16 (dev);
     IsaDmaClass *k;
-    struct audsettings as;
 
     if (!audio_be_check(&s->audio_be, errp)) {
         return;
@@ -1802,8 +1806,6 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
 
     k = ISADMA_GET_CLASS(s->isa_hdma);
     k->register_channel(s->isa_hdma, s->hdma, SB_read_DMA, s);
-    
-
 
     s->mixer_regs[0x80] = magic_of_irq (s->irq);
     s->mixer_regs[0x81] = (1 << s->dma) | (1 << s->hdma);
@@ -1815,20 +1817,7 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     /* just in case */
     s->align = (s->fmt_bits == 16) ? 1 : 0;
 
-    OPL3_LockTable();
-    s->ymf262 = ymf262_init(14318180, 44100);
-    if (s->ymf262) {
-        ymf262_reset_chip(s->ymf262);
-        ymf262_set_timer_handler(s->ymf262, sb16_opl_timer_handler, s);
-        as.freq = 44100;
-        as.nchannels = 2;
-        as.fmt = AUDIO_FORMAT_S16;
-        as.big_endian = false;
-        s->voice_opl = audio_be_open_out(s->audio_be, s->voice_opl, "sb16-opl", s, sb16_opl_callback, &as);
-        audio_be_set_active_out(s->audio_be, s->voice_opl, 1);
-	isa_register_portio_list(isadev, &s->opl_portio_list, s->port, opl_portio_list, s, "sb16-opl");
-	isa_register_portio_list(isadev, &s->hack_portio_list, 0x388, opl_portio_list, s, "sb16-opl");
-    }
+    ymf262_realize(s, isadev);
 
     reset_mixer (s);
     s->aux_ts = timer_new_ns(QEMU_CLOCK_VIRTUAL, aux_timer, s);
