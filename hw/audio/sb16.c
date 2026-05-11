@@ -118,7 +118,7 @@ struct SB16State {
     int32_t adpcm_index;
 
     opl3_chip ymf262;
-    uint16_t ymf262_reg;
+    uint16_t ymf262_regs[2];
     int16_t *ymf262_mix;
     unsigned int ymf262_samps;
     uint8_t ymf262_status;
@@ -192,18 +192,19 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
 {
     SB16State *s = opaque;
     uint32_t a = nport & 3;
-    
+    uint16_t reg;
+
     audio_be_set_active_out(s->audio_be, s->voice_opl, 1);
 
     switch (a) {
     case 0:  /* bank-0 address latch */
-        s->ymf262_reg = val & 0xff;
+        s->ymf262_regs[0] = val & 0xff;
         break;
     case 2:  /* bank-1 address latch */
-        s->ymf262_reg = (val & 0xff) | 0x100;
+        s->ymf262_regs[1] = (val & 0xff) | 0x100;
         break;
     case 1:  /* bank-0 data commit */
-    case 3:  /* bank-1 data commit; bank bit already in ymf262_reg */
+    case 3:  /* bank-1 data commit; bank bit already in ymf262_regs */
         /*
          * Bank-0 reg 0x04 is OPL Timer Control. Nuked-OPL3 ignores it,
          * so we synthesize the status byte here. Bit 7 = IRQ reset
@@ -212,7 +213,8 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
          *   ctrl bit 0: T1 start    ctrl bit 6: T1 mask
          *   ctrl bit 1: T2 start    ctrl bit 5: T2 mask
          */
-        if (s->ymf262_reg == 0x04) {
+        reg = (a == 1) ? s->ymf262_regs[0] : s->ymf262_regs[1];
+        if (reg == 0x04) {
             if (val & 0x80) {
                 s->ymf262_status = 0;
             } else {
@@ -229,7 +231,7 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
                 s->ymf262_status = status;
             }
         }
-        OPL3_WriteRegBuffered(&s->ymf262, s->ymf262_reg,
+        OPL3_WriteRegBuffered(&s->ymf262, reg,
                               val & 0xff);
         break;
     default:
