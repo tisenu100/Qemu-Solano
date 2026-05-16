@@ -173,6 +173,25 @@ static void sb16_update_voice_volume(SB16State *s)
     audio_be_set_volume_out(s->audio_be, s->voice, &vol);
 }
 
+static void sb16_update_opl_volume(SB16State *s)
+{
+    if (!s->voice) return;
+
+    int ml_idx = (s->mixer_regs[0x30] >> 3) & 0x1f;
+    int mr_idx = (s->mixer_regs[0x31] >> 3) & 0x1f;
+    int vl_idx = (s->mixer_regs[0x34] >> 3) & 0x1f;
+    int vr_idx = (s->mixer_regs[0x35] >> 3) & 0x1f;
+
+    Volume vol;
+    vol.mute = 0;
+    vol.channels = 2;
+
+    vol.vol[0] = (sb16_log_vol[ml_idx] * sb16_log_vol[vl_idx] * 192) / 65025;
+    vol.vol[1] = (sb16_log_vol[mr_idx] * sb16_log_vol[vr_idx] * 192) / 65025;
+
+    audio_be_set_volume_out(s->audio_be, s->voice_opl, &vol);
+}
+
 static void sb16_opl_callback(void *opaque, int free)
 {
     SB16State *s = opaque;
@@ -445,6 +464,7 @@ static void continue_dma8 (SB16State *s)
             SB_audio_callback,
             &as
             );
+    sb16_update_opl_volume(s);
 	sb16_update_voice_volume(s);
     }
 
