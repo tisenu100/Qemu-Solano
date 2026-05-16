@@ -115,13 +115,13 @@ struct pci_vmsvga_state_s {
 # define SVGA_ID                SVGA_ID_2
 # define SVGA_IO_BASE           SVGA_LEGACY_BASE_PORT
 # define SVGA_IO_MUL            1
-# define SVGA_FIFO_SIZE         0x10000
+# define SVGA_FIFO_SIZE         0x40000
 # define SVGA_PCI_DEVICE_ID     PCI_DEVICE_ID_VMWARE_SVGA2
 #else
 # define SVGA_ID                SVGA_ID_1
 # define SVGA_IO_BASE           SVGA_LEGACY_BASE_PORT
 # define SVGA_IO_MUL            4
-# define SVGA_FIFO_SIZE         0x10000
+# define SVGA_FIFO_SIZE         0x40000
 # define SVGA_PCI_DEVICE_ID     PCI_DEVICE_ID_VMWARE_SVGA
 #endif
 
