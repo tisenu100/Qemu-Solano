@@ -175,7 +175,7 @@ static void sb16_update_voice_volume(SB16State *s)
 
 static void sb16_update_opl_volume(SB16State *s)
 {
-    if (!s->voice) return;
+    if (!s->voice_opl) return;
 
     int ml_idx = (s->mixer_regs[0x30] >> 3) & 0x1f;
     int mr_idx = (s->mixer_regs[0x31] >> 3) & 0x1f;
@@ -232,7 +232,7 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
          *   ctrl bit 0: T1 start    ctrl bit 6: T1 mask
          *   ctrl bit 1: T2 start    ctrl bit 5: T2 mask
          */
-        reg = s->ymf262_reg | ((a == 3) ? 0x100 : 0x00);
+        reg = s->ymf262_reg;
         if (reg == 0x04) {
             if (val & 0x80) {
                 s->ymf262_status = 0;
