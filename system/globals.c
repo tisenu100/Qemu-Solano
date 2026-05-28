@@ -41,7 +41,7 @@ bool is_mlock_on_fault(MlockState state)
     return state == MLOCK_ON_FAULT;
 }
 
-enum vga_retrace_method vga_retrace_method = VGA_RETRACE_DUMB;
+enum vga_retrace_method vga_retrace_method = VGA_RETRACE_PRECISE;
 int display_opengl;
 const char* keyboard_layout;
 MlockState mlock_state;

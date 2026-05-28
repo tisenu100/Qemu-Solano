@@ -118,7 +118,7 @@ struct SB16State {
     int32_t adpcm_index;
 
     opl3_chip ymf262;
-    uint16_t ymf262_regs[2];
+    uint16_t ymf262_reg;
     int16_t *ymf262_mix;
     unsigned int ymf262_samps;
     uint8_t ymf262_status;
@@ -173,6 +173,25 @@ static void sb16_update_voice_volume(SB16State *s)
     audio_be_set_volume_out(s->audio_be, s->voice, &vol);
 }
 
+static void sb16_update_opl_volume(SB16State *s)
+{
+    if (!s->voice_opl) return;
+
+    int ml_idx = (s->mixer_regs[0x30] >> 3) & 0x1f;
+    int mr_idx = (s->mixer_regs[0x31] >> 3) & 0x1f;
+    int vl_idx = (s->mixer_regs[0x34] >> 3) & 0x1f;
+    int vr_idx = (s->mixer_regs[0x35] >> 3) & 0x1f;
+
+    Volume vol;
+    vol.mute = 0;
+    vol.channels = 2;
+
+    vol.vol[0] = (sb16_log_vol[ml_idx] * sb16_log_vol[vl_idx] * 192) / 65025;
+    vol.vol[1] = (sb16_log_vol[mr_idx] * sb16_log_vol[vr_idx] * 192) / 65025;
+
+    audio_be_set_volume_out(s->audio_be, s->voice_opl, &vol);
+}
+
 static void sb16_opl_callback(void *opaque, int free)
 {
     SB16State *s = opaque;
@@ -198,10 +217,10 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
 
     switch (a) {
     case 0:  /* bank-0 address latch */
-        s->ymf262_regs[0] = val & 0xff;
+        s->ymf262_reg = val & 0xff;
         break;
     case 2:  /* bank-1 address latch */
-        s->ymf262_regs[1] = (val & 0xff) | 0x100;
+        s->ymf262_reg = (val & 0xff) | 0x100;
         break;
     case 1:  /* bank-0 data commit */
     case 3:  /* bank-1 data commit; bank bit already in ymf262_regs */
@@ -213,7 +232,7 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
          *   ctrl bit 0: T1 start    ctrl bit 6: T1 mask
          *   ctrl bit 1: T2 start    ctrl bit 5: T2 mask
          */
-        reg = (a == 1) ? s->ymf262_regs[0] : s->ymf262_regs[1];
+        reg = s->ymf262_reg;
         if (reg == 0x04) {
             if (val & 0x80) {
                 s->ymf262_status = 0;
@@ -445,6 +464,7 @@ static void continue_dma8 (SB16State *s)
             SB_audio_callback,
             &as
             );
+    sb16_update_opl_volume(s);
 	sb16_update_voice_volume(s);
     }
 
