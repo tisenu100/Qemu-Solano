@@ -78,6 +78,7 @@ void pc_solano_init(MachineState *machine,                                      
                     const char   *pci_host,          /* Northbridge PCI Host                     */  \
                     const char   *pci_dev,           /* Northbridge PCI Device                   */  \
                     pci_map_irq_fn board_slots,      /* PCI slots assigned usually by the board  */  \
+                    uint16_t agp_bridge_dev_id,      /* The AGP Bridge Device ID                 */  \
                     int min_assignable_memory,       /* Smallest mem size allowed by the chipset */  \
                     int max_assignable_memory,       /* Maximum mem size allowed by the chipset  */  \
                     ram_addr_t tom_config_lowmem,    /* TOM configuration                        */  \
@@ -213,15 +214,22 @@ void pc_solano_init(MachineState *machine,                                      
     smbus_eeprom_init_one(pcms->smbus, 0x50, spd);
 
     fprintf(stderr, "PC: Setting up Bridges\n");
-    agp_bridge_dev = pci_new(PCI_DEVFN(0x01, 0), "solano-agp-bridge");
+    agp_bridge_dev = pci_new(PCI_DEVFN(0x01, 0), "i82801b11-bridge");
     agp_bridge = PCI_BRIDGE(agp_bridge_dev);
+    /* Update Bridge vendor to match the AGP bridge */
+    pci_set_word(agp_bridge_dev->config + 0x02, agp_bridge_dev_id);
+    pci_set_byte(agp_bridge_dev->config + 0x04, 0x01);
+
     pci_bridge_map_irq(agp_bridge, "pci.1", agp_slot_get_pirq);
     pci_realize_and_unref(agp_bridge_dev, pcms->pcibus, &error_fatal);
 
-    pci_bridge_dev = pci_new(PCI_DEVFN(0x1e, 0), "ich2-pci-bridge");
+    pci_bridge_dev = pci_new(PCI_DEVFN(0x1e, 0), "i82801b11-bridge");
     pci_bridge = PCI_BRIDGE(pci_bridge_dev);
     pci_bridge_map_irq(pci_bridge, "pci.2", board_slots);
     pci_realize_and_unref(pci_bridge_dev, pcms->pcibus, &error_fatal);
+    /* Update Bridge vendor to match the PCI bridge */
+    pci_set_word(pci_bridge_dev->config + 0x02, PCI_DEVICE_ID_INTEL_ICH2_PCI);
+    pci_set_byte(pci_bridge_dev->config + 0x04, 0x01);
 
     fprintf(stderr, "PC: Setting up USB\n");
     pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 2), TYPE_ICH2_USB_UHCI1);

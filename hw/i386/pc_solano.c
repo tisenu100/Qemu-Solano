@@ -99,7 +99,7 @@ static void pc_init(MachineState *machine)
     
     */
 
-    pc_solano_init(machine, TYPE_I815E_PCI_HOST_BRIDGE, TYPE_I815E_PCI_DEVICE, pci_slots_get_pirq, 32 * MiB, 512 * MiB, 512 * MiB, 0x414c, 0x4730, SDR, w83627hf_create);
+    pc_solano_init(machine, TYPE_I815E_PCI_HOST_BRIDGE, TYPE_I815E_PCI_DEVICE, pci_slots_get_pirq, PCI_DEVICE_ID_INTEL_I815E_AGP, 32 * MiB, 512 * MiB, 512 * MiB, 0x414c, 0x4730, SDR, w83627hf_create);
 }
 
 #define DEFINE_SOLANO_MACHINE(major, minor) \

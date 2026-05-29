@@ -40,6 +40,7 @@ void pc_solano_init(MachineState *machine,                                      
                     const char   *pci_host,          /* Northbridge PCI Host                     */  \
                     const char   *pci_dev,           /* Northbridge PCI Device                   */  \
                     pci_map_irq_fn board_slots,      /* PCI slots assigned usually by the board  */  \
+                    uint16_t agp_bridge_dev_id,      /* The AGP Bridge Device ID                 */  \
                     int min_assignable_memory,       /* Smallest mem size allowed by the chipset */  \
                     int max_assignable_memory,       /* Maximum mem size allowed by the chipset  */  \
                     ram_addr_t tom_config_lowmem,    /* TOM configuration                        */  \

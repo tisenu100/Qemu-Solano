@@ -113,7 +113,7 @@ static void pc_init(MachineState *machine)
         TOM output may be different for each board
     */
 
-    pc_solano_init(machine, TYPE_I845_PCI_HOST_BRIDGE, TYPE_I845_PCI_DEVICE, pci_slots_get_pirq, 32 * MiB, 3 * GiB, 0x200000000, 0x414c, 0x4710, DDR, w83627hf_create);
+    pc_solano_init(machine, TYPE_I845_PCI_HOST_BRIDGE, TYPE_I845_PCI_DEVICE, pci_slots_get_pirq, PCI_DEVICE_ID_INTEL_I845_AGP, 32 * MiB, 3 * GiB, 0x200000000, 0x414c, 0x4710, DDR, w83627hf_create);
 }
 
 #define DEFINE_BROOKDALE_MACHINE(major, minor) \
