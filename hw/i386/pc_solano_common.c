@@ -251,7 +251,11 @@ void pc_solano_init(MachineState *machine,                                      
     sysbus_realize_and_unref(SYS_BUS_DEVICE(sst_flash), &error_fatal);
 
     fprintf(stderr, "PC: Setting up timers\n");
-    i8254 = i8254_pit_init(isa_bus, 0x40, 0, NULL); /* Legacy 8254 PIT */
+    if(kvm_enabled()) 
+        i8254 = kvm_pit_init(isa_bus, 0x40, 0, NULL); /* KVM 8254 PIT */
+    else
+        i8254 = i8254_pit_init(isa_bus, 0x40, 0, NULL); /* Legacy 8254 PIT */
+
     object_property_set_link(OBJECT(pcms->pcspk), "pit", OBJECT(i8254), &error_fatal);
     isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
     ioapic_init_gsi(gsi_state, phb);
