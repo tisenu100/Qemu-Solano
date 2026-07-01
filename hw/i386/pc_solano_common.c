@@ -252,7 +252,7 @@ void pc_solano_init(MachineState *machine,                                      
 
     fprintf(stderr, "PC: Setting up timers\n");
     if(kvm_enabled()) 
-        i8254 = kvm_pit_init(isa_bus, 0x40, 0, NULL); /* KVM 8254 PIT */
+        i8254 = kvm_pit_init(isa_bus, 0x40); /* KVM 8254 PIT */
     else
         i8254 = i8254_pit_init(isa_bus, 0x40, 0, NULL); /* Legacy 8254 PIT */
 
