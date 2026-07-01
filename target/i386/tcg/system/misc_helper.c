@@ -504,7 +504,6 @@ default:
 
         /* Willamette-specific MSRs */
         if (eff_fam == 15 && eff_mod == 1) {
-            fprintf(stderr,"RDMSR: Reading 0x%x\n", (uint32_t)env->regs[R_ECX]);
             switch ((uint32_t)env->regs[R_ECX]) {
             case 0x17: /* MSR_IA32_PLATFORM_ID */
                 val = 0x0004000000000000ULL; /* Platform socket topology definitions */
