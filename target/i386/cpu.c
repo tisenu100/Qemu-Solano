@@ -229,8 +229,6 @@ static uint8_t cpuid2_cache_descriptor(CPUCacheInfo *cache, bool *unmacthed)
 {
     int i;
 
-    /* 1. Add an explicit NULL pointer guard. If a cache level doesn't exist 
-     * (like our missing L3 cache), exit early with a safe, blank indicator. */
     if (!cache || cache->size == 0) {
         return CACHE_DESCRIPTOR_UNAVAILABLE;
     }
@@ -249,8 +247,6 @@ static uint8_t cpuid2_cache_descriptor(CPUCacheInfo *cache, bool *unmacthed)
             }
     }
 
-    /* 2. Log unmatched configs safely instead of crashing, or force fallback. 
-     * This protects unique architectural footprints like the 12KB trace cache. */
     *unmacthed |= true;
     return CACHE_DESCRIPTOR_UNAVAILABLE;
 }
