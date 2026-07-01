@@ -486,16 +486,7 @@ void helper_rdmsr(CPUX86State *env)
         break;
     }
 
-    /* Pentium III specific MSR's */
-    case 0x2a:
-        val = 0xc5040020;
-    break;
-
-    case 0x11e:
-        val = 0x007447e1;
-    break;
-
-    default:
+default:
         if ((uint32_t)env->regs[R_ECX] >= MSR_MC0_CTL
             && (uint32_t)env->regs[R_ECX] < MSR_MC0_CTL +
             (4 * env->mcg_cap & 0xff)) {
@@ -503,6 +494,84 @@ void helper_rdmsr(CPUX86State *env)
             val = env->mce_banks[offset];
             break;
         }
+
+        /* Decode packed CPUID Family and Model values for Willamette */
+        uint32_t eff_fam = ((env->cpuid_version >> 8) & 0xf) + ((env->cpuid_version >> 20) & 0xff);
+        uint32_t eff_mod = ((env->cpuid_version >> 4) & 0xf);
+        if (((env->cpuid_version >> 8) & 0xf) == 15) {
+            eff_mod |= ((env->cpuid_version >> 16) & 0xf) << 4;
+        }
+
+        /* Willamette-specific MSRs */
+        if (eff_fam == 15 && eff_mod == 1) {
+            fprintf(stderr,"RDMSR: Reading 0x%x\n", (uint32_t)env->regs[R_ECX]);
+            switch ((uint32_t)env->regs[R_ECX]) {
+            case 0x17: /* MSR_IA32_PLATFORM_ID */
+                val = 0x0004000000000000ULL; /* Platform socket topology definitions */
+                break;
+            case 0x1b: /* MSR_IA32_APIC_BASE */
+                val = cpu_get_apic_base((void *)(env_archcpu(env)->apic_state)); /* Safely pass off to existing APIC tracker tracking */
+                break;
+            case 0x2a: /* MSR_IA32_EBL_CR_POWERON */
+                val = 0x000000001a000000ULL; /* 100MHz System Bus x 26 Multiplier */
+                break;
+            case 0x2b: /* MSR_EBL_CR_POWERON1 */
+                val = 0x0000000000000018ULL; /* System phase lock loop (PLL) status stable flags */
+                break;
+            case 0x2c: /* MSR_EBC_FREQUENCY_ID / MSR_REMAP_FREQ_BASE */
+                val = 0x000000000000001aULL; /* Hardware target core clock ratio index */
+                break;
+            case 0x1a0: /* MSR_IA32_MISC_ENABLE */
+                /* Bit 3: Automatic Thermal Control Circuit Enable
+                 * Bit 7: Performance Monitoring Available
+                 * Bit 16: Enhanced Intel SpeedStep technology */
+                val = 0x0000000000000088ULL; 
+                break;
+            case 0x11e: /* MSR_BBL_CR_CTL3 (L2 Cache Control for Early NetBurst) */
+                val = 0x0000000000000117ULL; /* Operational L2, enabled state flags */
+                break;
+            case 0x179: /* MSR_IA32_MCG_CAP */
+                val = env->mcg_cap; /* Fallback link directly into QEMU's default internal caps */
+                break;
+            case 0x17a: /* MSR_IA32_MCG_STATUS */
+                val = 0x0000000000000000ULL; /* No global machine check exceptions tripped */
+                break;
+            case 0x19a: /* MSR_THERM_STATUS */
+                val = 0x0000000000000000ULL; /* 0 = Running cool, no thermal throttling active */
+                break;
+            case 0x19b: /* MSR_THERM_INTERRUPT */
+                val = 0x0000000000000000ULL; /* Quietly accept configuration thresholds */
+                break;
+            case 0x1d9: /* MSR_IA32_DEBUGCTLMSR */
+                val = 0x0000000000000000ULL; /* Turn off branch recording and execution tracing */
+                break;
+            case 0x200 ... 0x20f: /* Variable MTRRs (Base and Mask pairs) */
+                /* If guest reads memory type range registers, return standard write-back memory types */
+                val = 0x0000000000000006ULL; 
+                break;
+            case 0x2ff: /* MSR_IA32_MTRR_DEF_TYPE */
+                val = 0x0000000000000c06ULL; /* Enable MTRRs globally, default type Write-Back */
+                break;
+            case 0x3a0 ... 0x3ba: /* BSPI_ESCR0 to ITLB_ESCR1 (Frontend/Branch Pipeline) */
+            case 0x3c0 ... 0x3cf: /* IX_ESCR0 to ALF_ESCR1 (Execution Trace Cache Pipeline) */
+            case 0x3e0 ... 0x3e1: /* MSU_ESCR0 to MSU_ESCR1 (Memory Subsystem) */
+            case 0x430 ... 0x442: /* TC_ESCR0 to RAT_ESCR1 (Trace Cache / Register Alias Table) */
+            case 0x490 ... 0x4ab: /* UFS_ESCR0 to TBPU_ESCR1 (Execution Schedulers) */
+                val = 0x0000000000000000ULL; /* Return zero: no filters matched or requested */
+                break;
+            case 0x360 ... 0x371: /* BPU_CCCR0 through TO_CCCR3 */
+                val = 0x0000000000000000ULL;
+                break;
+            case 0x300 ... 0x311: /* MSR_P4_BPU_PERFCTR0 to MSR_P4_MS_PERFCTR3 */
+                val = 0x0000000000000000ULL; /* Return zero so software sees un-incremented loops */
+                break;
+            default:
+                raise_exception_err_ra(env, EXCP0D_GPF, 0, GETPC());
+                return;
+            }
+            break;
+        }
+
         /* XXX: exception? */
         val = 0;
         break;

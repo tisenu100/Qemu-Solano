@@ -19,6 +19,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/timer.h"
 #include "cpu.h"
 #include "exec/helper-proto.h"
 #include "exec/cputlb.h"
@@ -70,7 +71,31 @@ void helper_rdtsc(CPUX86State *env)
     }
     cpu_svm_check_intercept_param(env, SVM_EXIT_RDTSC, 0, GETPC());
 
-    val = cpu_get_tsc(env) + env->tsc_offset;
+    bool handled_tsc_underclock = false;
+
+    /* Verify we are running on Willamette */
+    if (env && env->cpuid_version != 0) {
+        uint32_t tsc_fam = ((env->cpuid_version >> 8) & 0xf) + ((env->cpuid_version >> 20) & 0xff);
+        uint32_t tsc_mod = ((env->cpuid_version >> 4) & 0xf);
+        if (((env->cpuid_version >> 8) & 0xf) == 15) {
+            tsc_mod |= ((env->cpuid_version >> 16) & 0xf) << 4;
+        }
+
+        /* Check for Willamette (Family 15, Model 1) */
+        if (tsc_fam == 15 && tsc_mod == 1) {
+            if (qemu_clock_use_for_deadline(QEMU_CLOCK_VIRTUAL)) {
+                uint64_t ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+                val = (ns * 26) / 10;
+                handled_tsc_underclock = true;
+            }
+        }
+    }
+
+    /* Safe standard fallback pattern */
+    if (!handled_tsc_underclock) {
+        val = cpu_get_tsc(env) + env->tsc_offset;
+    }
+
     env->regs[R_EAX] = (uint32_t)(val);
     env->regs[R_EDX] = (uint32_t)(val >> 32);
 }
