@@ -45,16 +45,15 @@
 
 OBJECT_DECLARE_SIMPLE_TYPE(SSTState, SST_LPC)
 struct SSTState {
-    /*< private >*/
     SysBusDevice parent_obj;
-    /*< public >*/
-
-    int stage;
-    int sw_id;
     
-    PFlashCFI01 *pfl;
     MemoryRegion mem;
+    PFlashCFI01 *pfl;
     uint8_t *buf;
+    
+    uint32_t flash_size;
+    uint32_t addr_mask;
+    int stage;
 };
 
 void sst_mount_flash(SSTState *sst, PFlashCFI01 *pfl);
