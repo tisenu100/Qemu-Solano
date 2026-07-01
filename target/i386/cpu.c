@@ -229,10 +229,17 @@ static uint8_t cpuid2_cache_descriptor(CPUCacheInfo *cache, bool *unmacthed)
 {
     int i;
 
+    /* 1. Add an explicit NULL pointer guard. If a cache level doesn't exist 
+     * (like our missing L3 cache), exit early with a safe, blank indicator. */
+    if (!cache || cache->size == 0) {
+        return CACHE_DESCRIPTOR_UNAVAILABLE;
+    }
+
     assert(cache->size > 0);
     assert(cache->level > 0);
     assert(cache->line_size > 0);
     assert(cache->associativity > 0);
+    
     for (i = 0; i < ARRAY_SIZE(cpuid2_cache_descriptors); i++) {
         struct CPUID2CacheDescriptorInfo *d = &cpuid2_cache_descriptors[i];
         if (d->level == cache->level && d->type == cache->type &&
@@ -242,6 +249,8 @@ static uint8_t cpuid2_cache_descriptor(CPUCacheInfo *cache, bool *unmacthed)
             }
     }
 
+    /* 2. Log unmatched configs safely instead of crashing, or force fallback. 
+     * This protects unique architectural footprints like the 12KB trace cache. */
     *unmacthed |= true;
     return CACHE_DESCRIPTOR_UNAVAILABLE;
 }
@@ -786,7 +795,7 @@ static const CPUCaches legacy_intel_cache_info = {
     },
 };
 
-/* Used by Willamette */
+/* Willamette Cache Topology */
 static const CPUCaches willamette_cache_info = {
     .l1i_cache = &(CPUCacheInfo) {
         .type = INSTRUCTION_CACHE, .level = 1, .size = 12 * KiB,
@@ -803,6 +812,7 @@ static const CPUCaches willamette_cache_info = {
         .line_size = 64, .associativity = 8, .partitions = 1,
         .sets = 512, .lines_per_tag = 1,
     },
+    .l3_cache = NULL,
 };
 
 /* TLB definitions: */
