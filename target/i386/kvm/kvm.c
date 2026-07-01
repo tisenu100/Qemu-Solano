@@ -6391,8 +6391,81 @@ static int kvm_filter_msr(KVMState *s, uint32_t msr, QEMURDMSRHandler *rdmsr,
 
 static int kvm_handle_rdmsr(X86CPU *cpu, struct kvm_run *run)
 {
+    CPUX86State *env = &cpu->env;
+    uint32_t ecx = run->msr.index;
+    uint64_t val = 0;
+    bool handled_msr_manipulation = false;
     int i;
     bool r;
+
+    uint32_t eff_fam = ((env->cpuid_version >> 8) & 0xf) + ((env->cpuid_version >> 20) & 0xff);
+    uint32_t eff_mod = ((env->cpuid_version >> 4) & 0xf);
+    if (((env->cpuid_version >> 8) & 0xf) == 15) {
+        eff_mod |= ((env->cpuid_version >> 16) & 0xf) << 4;
+    }
+
+    /* Intercept for Willamette */
+    if (eff_fam == 15 && eff_mod == 1) {
+        switch (ecx) {
+        case 0x17: /* MSR_IA32_PLATFORM_ID */
+            val = 0x0004000000000000ULL;
+            handled_msr_manipulation = true;
+            break;
+        case 0x2a: /* MSR_IA32_EBL_CR_POWERON */
+            val = 0x000000001a000000ULL;
+            handled_msr_manipulation = true;
+            break;
+        case 0x2b: /* MSR_EBL_CR_POWERON1 */
+            val = 0x0000000000000018ULL;
+            handled_msr_manipulation = true;
+            break;
+        case 0x2c: /* MSR_EBC_FREQUENCY_ID */
+            val = 0x000000000000001aULL;
+            handled_msr_manipulation = true;
+            break;
+        case 0x1a0: /* MSR_IA32_MISC_ENABLE */
+            val = 0x0000000000000088ULL; 
+            handled_msr_manipulation = true;
+            break;
+        case 0x11e: /* MSR_BBL_CR_CTL3 */
+            val = 0x0000000000000117ULL;
+            handled_msr_manipulation = true;
+            break;
+        case 0x200 ... 0x20f: /* Variable MTRRs */
+            val = 0x0000000000000006ULL; 
+            handled_msr_manipulation = true;
+            break;
+        case 0x2ff: /* MSR_IA32_MTRR_DEF_TYPE */
+            val = 0x0000000000000c06ULL;
+            handled_msr_manipulation = true;
+            break;
+        case 0x19a: /* MSR_THERM_STATUS */
+        case 0x19b: /* MSR_THERM_INTERRUPT */
+        case 0x360 ... 0x371: /* P4 CCCRs */
+        case 0x300 ... 0x311: /* P4 Counters */
+        case 0x3a0 ... 0x3ba: /* ESCRs */
+        case 0x3c0 ... 0x3cf:
+        case 0x3e0 ... 0x3e1:
+        case 0x430 ... 0x442:
+        case 0x490 ... 0x4ab:
+        case 0x1d9: /* MSR_IA32_DEBUGCTLMSR */
+        case 0x17a: /* MSR_IA32_MCG_STATUS */
+            val = 0;
+            handled_msr_manipulation = true;
+            break;
+        case 0x179: /* MSR_IA32_MCG_CAP */
+            val = env->mcg_cap;
+            handled_msr_manipulation = true;
+            break;
+        }
+    }
+
+    /* Trigger a VM Exit like a real KVM MSR read */
+    if (handled_msr_manipulation) {
+        run->msr.data = val;
+        run->msr.error = 0;
+        return 0;
+    }
 
     for (i = 0; i < ARRAY_SIZE(msr_handlers); i++) {
         KVMMSRHandlers *handler = &msr_handlers[i];
