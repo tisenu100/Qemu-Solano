@@ -160,34 +160,25 @@ static uint64_t sst_read(void *opaque, hwaddr addr, unsigned len)
     SSTState *s = opaque;
     BlockBackend *blk = pflash_cfi01_get_blk(s->pfl);
     int size = blk_getlength(blk);
-
-    if(!s->sw_id) { /* Return the software vendor first */
-        s->sw_id++;
+ 
+    if((addr & 1) == 0) /* Return the software vendor first */
         return 0xbf;
-    }
-
-    s->sw_id--;
 
     switch(size) {
-        default:
-            fprintf(stderr, "SST: SST49LF002A\n");
+        case 256 * KiB: /* SST49LF002A */
             return 0x57;
-        break;
-
-        case 384 * KiB: /* Very absurd size for a PC BIOS */
-            fprintf(stderr, "SST: SST49LF003A\n");
+ 
+        case 384 * KiB: /* Very absurd size for a PC BIOS -- SST49LF003A */
             return 0x1b;
-        break;
-
-        case 512 * KiB:
-            fprintf(stderr, "SST: SST49LF004A\n");
+ 
+        case 512 * KiB: /* SST49LF004A */
             return 0x60;
-        break;
-
-        case 1 * MiB:
-            fprintf(stderr, "SST: SST49LF008A\n");
+ 
+        case 1 * MiB: /* SST49LF008A */
             return 0x5a;
-        break;
+ 
+        default: /* Unknown size: fall back to the smallest/most common part */
+            return 0x57;
     }
 }
 

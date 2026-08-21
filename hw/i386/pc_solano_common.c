@@ -231,6 +231,7 @@ void pc_solano_init(MachineState *machine,                                      
     /* Update Bridge vendor to match the PCI bridge */
     pci_set_word(pci_bridge_dev->config + 0x02, PCI_DEVICE_ID_INTEL_ICH2_PCI);
     pci_set_byte(pci_bridge_dev->config + 0x04, 0x01);
+    pci_word_test_and_set_mask(pci_bridge_dev->wmask + PCI_BRIDGE_CONTROL, PCI_BRIDGE_CTL_VGA);
 
     fprintf(stderr, "PC: Setting up USB\n");
     pci_create_simple(pcms->pcibus, PCI_DEVFN(0x1f, 2), TYPE_ICH2_USB_UHCI1);
