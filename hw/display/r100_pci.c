@@ -27,6 +27,7 @@
 #include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
+#include "trace.h"
 #include "r100.h"
 #include "r100_regs.h"
 
@@ -50,6 +51,13 @@ static void r100_realize(PCIDevice *dev, Error **errp)
 static void r100_reset(DeviceState *dev)
 {
     R100State *s = R100(dev);
+    uint32_t bios_scratch[(R100_BIOS_SCRATCH_END - R100_BIOS_SCRATCH_BASE)
+                          >> 2];
+
+    trace_r100_reset();
+
+    memcpy(bios_scratch, &s->regs[R100_BIOS_SCRATCH_BASE >> 2],
+           sizeof(bios_scratch));
 
     vga_common_reset(&s->vga);
 
@@ -60,9 +68,15 @@ static void r100_reset(DeviceState *dev)
     s->crtc_gen_cntl = 0;
     s->dac_cntl = 0;
 
+    s->pll_regs[0x2A] = 0x3C;
+    s->pll_regs[0x4A] = 0x3C;
+
+    memcpy(&s->regs[R100_BIOS_SCRATCH_BASE >> 2], bios_scratch,
+           sizeof(bios_scratch));
+
     /*
      * The gate byte must be correct immediately after reset, before POST
-     * even runs: bit 0x80 set (see r100_io_gate_read()).
+     * even runs: bit 0x80 set.
      */
     s->io_bar_gate = R100_IO_GATE_BIT;
 }

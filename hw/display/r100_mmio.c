@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "system/memory.h"
+#include "trace.h"
 #include "r100.h"
 #include "r100_regs.h"
 
@@ -31,6 +32,11 @@ static uint64_t size_mask(unsigned size)
 {
     return MAKE_64BIT_MASK(0, size * 8);
 }
+
+static uint64_t extract_field(uint64_t val, hwaddr addr, unsigned size);
+
+static uint32_t merge_field(uint32_t old, hwaddr addr, uint64_t val,
+                            unsigned size);
 
 static uint64_t r100_regs_read(R100State *s, hwaddr addr, unsigned size)
 {
@@ -64,23 +70,43 @@ static uint64_t r100_mm_data_read(R100State *s, hwaddr addr, unsigned size)
 {
     uint64_t idx = s->mm_index & R100_MM_INDEX_ADDR_MASK;
     hwaddr off = addr - R100_MM_DATA;
+    uint64_t val = 0;
+    unsigned i;
 
     if (s->mm_index & R100_MM_INDEX_VRAM_FLAG) {
         if (idx + off + size <= s->vga.vram_size) {
-            uint64_t val = 0;
-            unsigned i;
-
             for (i = 0; i < size; i++) {
                 val |= (uint64_t)s->vga.vram_ptr[idx + off + i] << (i * 8);
             }
+            trace_r100_mm_data_read(s->mm_index, idx + off, true, true,
+                                    size, val);
             return val;
         }
+        trace_r100_mm_data_read(s->mm_index, idx + off, true, false,
+                                size, 0);
         return 0;
     }
     if (idx + off + size > R100_MMIO_SIZE) {
+        trace_r100_mm_data_read(s->mm_index, idx + off, false, false,
+                                size, 0);
         return 0;
     }
-    return r100_regs_read(s, idx + off, size);
+    if (idx + off == R100_CRTC_GEN_CNTL) {
+        val = extract_field(r100_crtc_gen_cntl_read(s), idx + off, size);
+    } else {
+        val = r100_regs_read(s, idx + off, size);
+    }
+    trace_r100_mm_data_read(s->mm_index, idx + off, false, true, size, val);
+    return val;
+}
+
+static bool r100_is_scanout_reg(hwaddr a)
+{
+    return a == R100_CRTC_GEN_CNTL ||
+           a == R100_CRTC_H_TOTAL_DISP ||
+           a == R100_CRTC_V_TOTAL_DISP ||
+           a == R100_CRTC_PITCH ||
+           a == R100_CRTC_START;
 }
 
 static void r100_mm_data_write(R100State *s, hwaddr addr, uint64_t val,
@@ -88,21 +114,37 @@ static void r100_mm_data_write(R100State *s, hwaddr addr, uint64_t val,
 {
     uint64_t idx = s->mm_index & R100_MM_INDEX_ADDR_MASK;
     hwaddr off = addr - R100_MM_DATA;
+    bool vram = s->mm_index & R100_MM_INDEX_VRAM_FLAG;
+    bool in_range;
+    unsigned i;
 
-    if (s->mm_index & R100_MM_INDEX_VRAM_FLAG) {
-        if (idx + off + size <= s->vga.vram_size) {
-            unsigned i;
-
+    if (vram) {
+        in_range = idx + off + size <= s->vga.vram_size;
+        trace_r100_mm_data_write(s->mm_index, idx + off, vram, in_range,
+                                 size, val);
+        if (in_range) {
             for (i = 0; i < size; i++) {
                 s->vga.vram_ptr[idx + off + i] = (val >> (i * 8)) & 0xffu;
             }
         }
         return;
     }
-    if (idx + off + size > R100_MMIO_SIZE) {
-        return;
+    in_range = idx + off + size <= R100_MMIO_SIZE;
+    trace_r100_mm_data_write(s->mm_index, idx + off, vram, in_range,
+                             size, val);
+    if (in_range) {
+        if (idx + off == R100_CRTC_GEN_CNTL) {
+            r100_crtc_gen_cntl_write(s,
+                                     merge_field(r100_crtc_gen_cntl_read(s),
+                                                 idx + off, val, size));
+            r100_update_mode(s);
+        } else {
+            r100_regs_write(s, idx + off, val, size);
+            if (r100_is_scanout_reg(idx + off)) {
+                r100_update_mode(s);
+            }
+        }
     }
-    r100_regs_write(s, idx + off, val, size);
 }
 
 static uint32_t merge_field(uint32_t old, hwaddr addr, uint64_t val,
@@ -122,39 +164,39 @@ static uint64_t extract_field(uint64_t val, hwaddr addr, unsigned size)
 static uint64_t r100_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
     R100State *s = opaque;
-    uint64_t val;
+
+    if (addr - R100_MM_DATA < 4u) {
+        return r100_mm_data_read(s, addr, size);
+    }
 
     switch (addr) {
     case R100_MM_INDEX:
-        val = s->mm_index;
-        break;
-    case R100_MM_DATA:
-        return r100_mm_data_read(s, addr, size);
+        return extract_field(s->mm_index, addr, size);
     case R100_CLOCK_CNTL_INDEX:
-        val = s->clock_cntl_index;
-        break;
+        return extract_field(s->clock_cntl_index, addr, size);
     case R100_CLOCK_CNTL_DATA:
-        val = r100_pll_read(s);
-        break;
+        return extract_field(r100_pll_read(s), addr, size);
     case R100_CONFIG_MEMSIZE:
-        val = s->vga.vram_size;
-        break;
+        return extract_field(s->vga.vram_size, addr, size);
     case R100_MC_STATUS:
-        val = R100_MC_STATUS_IDLE;
-        break;
+        return extract_field(R100_MC_STATUS_IDLE, addr, size);
     case R100_MEM_SDRAM_MODE_REG:
-        val = s->regs[addr >> 2] | R100_MEM_SDRAM_MODE_STAT_BITS;
-        break;
+        return extract_field(s->regs[addr >> 2] |
+                             R100_MEM_SDRAM_MODE_STAT_BITS, addr, size);
     case R100_CRTC_GEN_CNTL:
-        val = r100_crtc_gen_cntl_read(s);
-        break;
+        return extract_field(r100_crtc_gen_cntl_read(s), addr, size);
     case R100_DAC_CNTL:
-        val = r100_dac_cntl_read(s);
-        break;
+        return extract_field(r100_dac_cntl_read(s), addr, size);
     default:
-        return r100_regs_read(s, addr, size);
+        break;
     }
-    return extract_field(val, addr, size);
+
+    {
+        uint64_t val = r100_regs_read(s, addr, size);
+
+        trace_r100_mmio_read(addr, size, val);
+        return val;
+    }
 }
 
 static void r100_mmio_write(void *opaque, hwaddr addr, uint64_t val,
@@ -162,12 +204,16 @@ static void r100_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 {
     R100State *s = opaque;
 
+    trace_r100_mmio_write(addr, val, size);
+
+    if (addr - R100_MM_DATA < 4u) {
+        r100_mm_data_write(s, addr, val, size);
+        return;
+    }
+
     switch (addr) {
     case R100_MM_INDEX:
         s->mm_index = merge_field(s->mm_index, addr, val, size);
-        break;
-    case R100_MM_DATA:
-        r100_mm_data_write(s, addr, val, size);
         break;
     case R100_CLOCK_CNTL_INDEX:
         s->clock_cntl_index = val;
@@ -185,6 +231,7 @@ static void r100_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         r100_crtc_gen_cntl_write(s,
                                  merge_field(r100_crtc_gen_cntl_read(s),
                                              addr, val, size));
+        r100_update_mode(s);
         break;
     case R100_DAC_CNTL:
         r100_dac_cntl_write(s,
@@ -210,14 +257,23 @@ static const MemoryRegionOps r100_mmio_ops = {
 static uint64_t r100_io_read(void *opaque, hwaddr addr, unsigned size)
 {
     R100State *s = opaque;
-    uint64_t val;
+    uint64_t val = 0;
+
+    if (addr - R100_MM_DATA < 4u) {
+        val = r100_mm_data_read(s, addr, size);
+        trace_r100_io_read(addr, size, val);
+        return val;
+    }
 
     switch (addr) {
+    case R100_MM_INDEX:
+        val = extract_field(s->mm_index, addr, size);
+        break;
     case R100_IO_CLOCK_CNTL_INDEX:
-        val = s->clock_cntl_index;
+        val = extract_field(s->clock_cntl_index, addr, size);
         break;
     case R100_IO_CLOCK_CNTL_DATA:
-        val = r100_pll_read(s);
+        val = extract_field(r100_pll_read(s), addr, size);
         break;
     case R100_IO_0F:
         val = R100_IO_0F_VALUE;
@@ -226,9 +282,14 @@ static uint64_t r100_io_read(void *opaque, hwaddr addr, unsigned size)
         val = r100_io_gate_read(s);
         break;
     default:
-        return r100_regs_read(s, addr, size);
+        val = r100_regs_read(s, addr, size);
+        break;
     }
-    return extract_field(val, addr, size);
+
+    if (addr != R100_IO_0F)
+        trace_r100_io_read(addr, size, val);
+
+    return val;
 }
 
 static void r100_io_write(void *opaque, hwaddr addr, uint64_t val,
@@ -236,7 +297,18 @@ static void r100_io_write(void *opaque, hwaddr addr, uint64_t val,
 {
     R100State *s = opaque;
 
+    if(addr != R100_IO_0F)
+    trace_r100_io_write(addr, val, size);
+
+    if (addr - R100_MM_DATA < 4u) {
+        r100_mm_data_write(s, addr, val, size);
+        return;
+    }
+
     switch (addr) {
+    case R100_MM_INDEX:
+        s->mm_index = merge_field(s->mm_index, addr, val, size);
+        break;
     case R100_IO_CLOCK_CNTL_INDEX:
         s->clock_cntl_index = val;
         break;
@@ -247,6 +319,12 @@ static void r100_io_write(void *opaque, hwaddr addr, uint64_t val,
         break;
     case R100_IO_GATE:
         r100_io_gate_write(s, val);
+        break;
+    case R100_CRTC_GEN_CNTL:
+        r100_crtc_gen_cntl_write(s,
+                                 merge_field(r100_crtc_gen_cntl_read(s),
+                                             addr, val, size));
+        r100_update_mode(s);
         break;
     default:
         r100_regs_write(s, addr, val, size);
