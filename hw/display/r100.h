@@ -34,7 +34,7 @@
 #define TYPE_R100 "r100"
 OBJECT_DECLARE_SIMPLE_TYPE(R100State, R100)
 
-#define R100_PLL_REG_COUNT 64
+#define R100_PLL_REG_COUNT 256 /* full CLOCK_CNTL_INDEX byte range; COMBIOS reads idx 0x4A */
 #define R100_MMIO_SIZE     0x4000
 #define R100_IO_BAR_SIZE   0x100
 
@@ -69,6 +69,10 @@ uint32_t r100_dac_cntl_read(R100State *s);
 void     r100_dac_cntl_write(R100State *s, uint32_t val);
 uint8_t  r100_io_gate_read(R100State *s);
 void     r100_io_gate_write(R100State *s, uint32_t val);
+
+/* extended (digital) CRTC scanout: mirror regs into the VGA core's VBE state */
+void r100_update_mode(R100State *s);
+
 void r100_mmio_init(R100State *s, Object *owner);
 void r100_vga_init(R100State *s, PCIDevice *dev, Error **errp);
 

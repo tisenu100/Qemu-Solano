@@ -226,3 +226,22 @@ apple_gfx_iosfc_unmap_memory(void *a, void *b, void *c, void *d, void *e, void *
 apple_gfx_iosfc_unmap_memory_region(void* mem, void *region) "unmapping @ %p from memory region %p"
 apple_gfx_iosfc_raise_irq(uint32_t vector) "vector=0x%x"
 
+# r100_mmio.c
+r100_mmio_read(uint64_t addr, unsigned size, uint64_t val) "BAR2[0x%04"PRIx64"] %u -> 0x%08"PRIx64
+r100_mmio_write(uint64_t addr, uint64_t val, unsigned size) "BAR2[0x%04"PRIx64"] <- 0x%08"PRIx64" (%u)"
+r100_io_read(uint64_t addr, unsigned size, uint64_t val) "BAR1[0x%02"PRIx64"] %u -> 0x%02"PRIx64
+r100_io_write(uint64_t addr, uint64_t val, unsigned size) "BAR1[0x%02"PRIx64"] <- 0x%02"PRIx64" (%u)"
+r100_mm_data_read(uint32_t mm_index, uint64_t idx, bool vram, bool in_range, unsigned size, uint64_t val) "MM_DATA mm_index=0x%08"PRIx32" idx=0x%08"PRIx64" vram=%d in_range=%d %u -> 0x%"PRIx64
+r100_mm_data_write(uint32_t mm_index, uint64_t idx, bool vram, bool in_range, unsigned size, uint64_t val) "MM_DATA mm_index=0x%08"PRIx32" idx=0x%08"PRIx64" vram=%d in_range=%d %u <- 0x%"PRIx64
+
+# r100_crtc.c
+r100_pll_read(uint32_t index, uint32_t val) "PLL[0x%02"PRIx32"] -> 0x%08"PRIx32
+r100_pll_write(uint32_t index, uint32_t val) "PLL[0x%02"PRIx32"] <- 0x%08"PRIx32
+r100_io_gate_read(uint8_t val) "gate[0x10] -> 0x%02"PRIx8
+r100_io_gate_write(uint8_t val) "gate[0x10] <- 0x%02"PRIx8
+r100_mode_set(uint32_t w, uint32_t h, uint32_t bpp, uint32_t pitch_bytes, uint32_t start) "mode %ux%u @%ubpp pitch=%u start=0x%x"
+
+# r100_pci.c
+r100_reset(void) "reset"
+
+

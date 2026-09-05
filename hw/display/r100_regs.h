@@ -49,6 +49,17 @@
 #define R100_CONFIG_MEMSIZE      0x00F8 /* Actual VRAM size in bytes */
 #define R100_MC_STATUS           0x0150 /* Always report idle MC */
 
+/*
+ * Strobe Protocol
+ * 0x080 (command word) / 0x084 (result, RW) / strobe byte at 0xC56 form
+ * a COMBIOS handshake block. The ROM writes its own "TM"+length token
+ * into 0x84 and reads it back -- plain coherent storage is sufficient;
+ * no fixed values belong here.
+ */
+#define R100_TM_RESULT           0x0084
+#define R100_TM_CMD              0x0080
+#define R100_TM_STROBE_REG       0x0C56
+
 /* Memory modes and training */
 #define R100_MEM_SDRAM_MODE_REG  0x0158
 #define R100_MEM_SDRAM_MODE_STAT_BITS ((1u << 28) | (1u << 20))
@@ -69,6 +80,8 @@
 #define R100_BIOS_0_SCRATCH1     0x0014
 #define R100_BIOS_0_SCRATCH2     0x0018
 #define R100_BIOS_0_SCRATCH3     0x001C
+#define R100_BIOS_SCRATCH_BASE   0x0010
+#define R100_BIOS_SCRATCH_END    0x0020
 #define R100_BUS_CNTL            0x0030
 #define R100_UNNAMED_00EC        0x00EC
 #define R100_MEM_CNTL            0x0140
@@ -89,5 +102,14 @@
 #define R100_UNNAMED_0910        0x0910
 #define R100_CRTC_GEN_CNTL       0x0050
 #define R100_DAC_CNTL            0x0058
+
+/*
+ * Extended CRTC scanout registers
+ */
+#define R100_CRTC_H_TOTAL_DISP   0x200
+#define R100_CRTC_V_TOTAL_DISP   0x208
+#define R100_CRTC_PITCH          0x22C
+#define R100_CRTC_START          0x230
+#define R100_CRTC_PIX_WIDTH_MASK 0x700u
 
 #endif
