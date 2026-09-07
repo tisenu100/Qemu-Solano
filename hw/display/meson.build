@@ -18,6 +18,7 @@ system_ss.add(when: 'CONFIG_SSD0303', if_true: files('ssd0303.c'))
 system_ss.add(when: 'CONFIG_SSD0323', if_true: files('ssd0323.c'))
 system_ss.add(when: 'CONFIG_XEN_BUS', if_true: files('xenfb.c'))
 
+system_ss.add(when: 'CONFIG_NV11', if_true: files('nv11.c', 'nv11_pcrtc.c', 'nv11_pbus.c', 'nv11_pramdac.c', 'nv11_vga.c', 'nv11_window.c', 'nv11_prome.c'))
 system_ss.add(when: 'CONFIG_VGA_PCI', if_true: files('vga-pci.c'))
 system_ss.add(when: 'CONFIG_VGA_ISA', if_true: files('vga-isa.c'))
 system_ss.add(when: 'CONFIG_VGA_MMIO', if_true: files('vga-mmio.c'))

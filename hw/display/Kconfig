@@ -41,6 +41,12 @@ config SSD0303
 config SSD0323
     bool
 
+config NV11
+    bool
+    default y if PCI_DEVICES
+    depends on PCI
+    select VGA
+
 config VGA_PCI
     bool
     default y if PCI_DEVICES

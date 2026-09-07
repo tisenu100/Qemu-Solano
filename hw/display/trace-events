@@ -217,6 +217,53 @@ apple_gfx_common_init(const char *device_name, size_t mmio_size) "device: %s; MM
 apple_gfx_common_realize_modes_property(uint32_t num_modes) "using %u modes supplied by 'display-modes' device property"
 apple_gfx_display_mode(uint32_t mode_idx, uint16_t width_px, uint16_t height_px) "mode %2"PRIu32": %4"PRIu16"x%4"PRIu16
 
+# nv11.c
+nv11_bar0_read(uint32_t eip, uint32_t addr, unsigned size) "NV11: [BAR0] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
+nv11_bar0_write(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [BAR0] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+
+# nv11_pbus.c
+nv11_pbus_read(uint32_t eip, uint32_t reg, unsigned size) "NV11: [PBUS] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
+nv11_pbus_write(uint32_t eip, uint32_t reg, unsigned size, uint32_t val) "NV11: [PBUS] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+nv11_pbus_init(void) "NV11: [PBUS] init"
+nv11_pbus_rom_shadow(uint32_t eip, bool enabled) "NV11: [PBUS] [eip=0x%"PRIx32"] ROM shadow %d"
+nv11_pextdev_read(uint32_t eip, uint32_t reg, unsigned size) "NV11: [PEXTDEV] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
+nv11_pextdev_write(uint32_t eip, uint32_t reg, unsigned size, uint32_t val) "NV11: [PEXTDEV] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+nv11_pfb_read(uint32_t eip, uint32_t reg, unsigned size) "NV11: [PFB] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
+nv11_pfb_write(uint32_t eip, uint32_t reg, unsigned size, uint32_t val) "NV11: [PFB] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+
+# nv11_pcrtc.c
+nv11_pcrtc_init(void) "NV11: [PCRTC] init"
+nv11_pcrtc_read(uint32_t eip, int head, uint32_t reg, unsigned size) "NV11: [eip=0x%"PRIx32"] PCRTC%d read 0x%"PRIx32" (%u bytes)"
+nv11_pcrtc_write(uint32_t eip, int head, uint32_t reg, unsigned size, uint32_t val) "NV11: [eip=0x%"PRIx32"] PCRTC%d write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+nv11_pcrtc_crtc_write(uint32_t eip, uint8_t index, uint8_t value) "NV11: [PCRTC] [eip=0x%"PRIx32"] CRTC[0x%02x] <- 0x%02x"
+nv11_pcrtc_strap_write(uint32_t eip, uint8_t index, uint8_t value) "NV11: [PCRTC] [eip=0x%"PRIx32"] strap CRTC[0x%02x] <- 0x%02x"
+nv11_pmcio_read(uint32_t eip, int head, uint32_t reg, unsigned size) "NV11: [eip=0x%"PRIx32"] PRMCIO%d read 0x%"PRIx32" (%u bytes)"
+nv11_pmcio_write(uint32_t eip, int head, uint32_t reg, unsigned size, uint32_t val) "NV11: [eip=0x%"PRIx32"] PRMCIO%d write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+
+# nv11_pramdac.c
+nv11_pramdac_init(void) "NV11: [PRAMDAC] init"
+nv11_pramdac_read(uint32_t eip, int head, uint32_t reg, unsigned size) "NV11: [eip=0x%"PRIx32"] PRAMDAC%d read 0x%"PRIx32" (%u bytes)"
+nv11_pramdac_write(uint32_t eip, int head, uint32_t reg, unsigned size, uint32_t val) "NV11: [eip=0x%"PRIx32"] PRAMDAC%d write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+
+# nv11_vga.c
+nv11_vga_init(void) "NV11: [VGA] init"
+nv11_vga_read(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [VGA] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes) = 0x%"PRIx32
+nv11_vga_write(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [VGA] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+
+# nv11_window.c
+nv11_window_init(void) "NV11: [WINDOW] init"
+nv11_window_read(uint32_t eip, uint64_t addr, unsigned size, uint8_t op, uint32_t win_addr) "NV11: [WINDOW] [eip=0x%"PRIx32"] read 0x%"PRIx64" (%u bytes op=%u) win=0x%"PRIx32
+nv11_window_write(uint32_t eip, uint64_t addr, unsigned size, uint32_t val, uint8_t op, uint32_t win_addr) "NV11: [WINDOW] [eip=0x%"PRIx32"] write 0x%"PRIx64" (%u bytes) val=0x%"PRIx32" op=%u win=0x%"PRIx32
+nv11_window_index(uint32_t eip, uint32_t addr) "NV11: [WINDOW] [eip=0x%"PRIx32"] INDEX latch <- 0x%"PRIx32
+nv11_window_read_data(uint32_t eip, uint32_t addr, uint32_t val) "NV11: [WINDOW] [eip=0x%"PRIx32"] READ [0x%"PRIx32"] = 0x%"PRIx32
+nv11_window_write_data(uint32_t eip, uint32_t addr, uint32_t val) "NV11: [WINDOW] [eip=0x%"PRIx32"] WRITE [0x%"PRIx32"] <- 0x%"PRIx32
+nv11_window_opcode(uint32_t eip, uint8_t raw, uint8_t op) "NV11: [WINDOW] [eip=0x%"PRIx32"] CRTC[0x38]=0x%02x opcode=%u"
+
+# nv11_prome.c
+nv11_prome_init(void) "NV11: [PROM] init"
+nv11_prome_read(uint32_t eip, uint32_t addr, unsigned size) "NV11: [PROM] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
+nv11_prome_write_blocked(uint32_t eip, uint32_t addr) "NV11: [PROM] [eip=0x%"PRIx32"] write BLOCKED at 0x%"PRIx32
+
 # apple-gfx-mmio.m
 apple_gfx_mmio_iosfc_read(uint64_t offset, uint64_t res) "offset=0x%"PRIx64" res=0x%"PRIx64
 apple_gfx_mmio_iosfc_write(uint64_t offset, uint64_t val) "offset=0x%"PRIx64" val=0x%"PRIx64
