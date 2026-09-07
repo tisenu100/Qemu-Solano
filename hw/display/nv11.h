@@ -32,11 +32,6 @@
 #include "qemu/timer.h"
 #include "hw/core/cpu.h"
 
-/* PCI IDs */
-#define NV11_PCI_VENDOR_ID       0x10DE
-#define NV11_PCI_DEVICE_ID       0x0110
-#define NV11_PCI_CLASS_VGA       0x000300
-
 /* BAR sizes */
 #define NV11_BAR0_SIZE           0x1000000   /* 16 MB */
 #define NV11_BAR1_VRAM_SIZE      0x0400000   /* 64 MB (Needs work for 32MB variants some day) */

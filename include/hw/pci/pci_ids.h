@@ -305,6 +305,7 @@
 #define PCI_VENDOR_ID_SYNOPSYS           0x16C3
 
 #define PCI_VENDOR_ID_NVIDIA             0x10de
+#define PCI_DEVICE_ID_NVIDIA_NV11B       0x0110
 
 #define PCI_VENDOR_ID_ASPEED             0x1A03
 

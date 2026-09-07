@@ -36,6 +36,7 @@
 #include "qemu/module.h"
 #include "qom/object.h"
 #include "hw/pci/pci.h"
+#include "hw/pci/pci_ids.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "ui/console.h"
@@ -422,8 +423,8 @@ static void nv11_class_init(ObjectClass *klass, const void *data)
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
 
     k->realize   = nv11_realize;
-    k->vendor_id = NV11_PCI_VENDOR_ID;
-    k->device_id = NV11_PCI_DEVICE_ID;
+    k->vendor_id = PCI_VENDOR_ID_NVIDIA;
+    k->device_id = PCI_DEVICE_ID_NVIDIA_NV11B;
     k->class_id  = PCI_CLASS_DISPLAY_VGA;
     dc->hotpluggable = false;
     nv11_vga_class_reset(klass);
