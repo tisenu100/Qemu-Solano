@@ -138,6 +138,12 @@ config ATI_VGA
     select BITBANG_I2C
     select DDC
 
+config R100
+    bool
+    default y if PCI_DEVICES
+    depends on PCI
+    select VGA
+
 config MACFB
     bool
     select FRAMEBUFFER
