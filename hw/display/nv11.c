@@ -34,6 +34,7 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
+#include "system/memory.h"
 #include "qom/object.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_ids.h"
@@ -179,6 +180,14 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
         goto return_val;
     }
 
+    if (off >= NV11_PGRAPH_OFF && off < NV11_PGRAPH_END) {
+        return nv11_pgraph_read(s, off - NV11_PGRAPH_OFF, size);
+    }
+
+    if (off >= NV11_FIFO_OFF && off < NV11_FIFO_END) {
+        return nv11_fifo_read(s, off - NV11_FIFO_OFF, size);
+    }
+
 flat_read:
     if (off + size > NV11_BAR0_SIZE) {
         qemu_log_mask(LOG_GUEST_ERROR,
@@ -269,6 +278,9 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
     if (off >= NV11_PCRTC0_OFF && off < NV11_PCRTC0_END) {
         uint32_t reg = off - NV11_PCRTC0_OFF;
         trace_nv11_pcrtc_write(eip, 0, reg, size, (uint32_t)val);
+        if (reg == NV11_PCRTC_CURSOR_CFG) {
+            s->cur_cfg = (uint32_t)val;
+        }
         goto flat_write;
     }
 
@@ -316,6 +328,9 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
         if (idx < sizeof(s->pramdac[0]) / sizeof(s->pramdac[0][0])) {
             s->pramdac[0][idx] = (uint32_t)val;
         }
+        if (reg == NV11_PRAMDAC_CUR_POS) {
+            s->cur_pos = (uint32_t)val;
+        }
         trace_nv11_pramdac_write(eip, 0, reg, size, (uint32_t)val);
         return;
     }
@@ -327,6 +342,16 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
             s->pramdac[1][idx] = (uint32_t)val;
         }
         trace_nv11_pramdac_write(eip, 1, reg, size, (uint32_t)val);
+        return;
+    }
+
+    if (off >= NV11_PGRAPH_OFF && off < NV11_PGRAPH_END) {
+        nv11_pgraph_write(s, off - NV11_PGRAPH_OFF, (uint32_t)val, size);
+        return;
+    }
+
+    if (off >= NV11_FIFO_OFF && off < NV11_FIFO_END) {
+        nv11_fifo_write(s, off - NV11_FIFO_OFF, (uint32_t)val, size);
         return;
     }
 
@@ -379,9 +404,14 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
         return;
     }
 
+    s->vram_ptr = memory_region_get_ram_ptr(&s->vga.vram);
+
     s->vga.get_params = nv11_get_params;
     s->vga.get_bpp = nv11_get_bpp;
     s->vga.get_resolution = nv11_get_resolution;
+    s->vga.force_shadow = 1;
+    s->vga.cursor_invalidate = nv11_cursor_invalidate;
+    s->vga.cursor_draw_line = nv11_cursor_draw_line;
 
     /* BAR0: MMIO */
     memory_region_init_io(&s->bar0, OBJECT(dev), &nv11_bar0_ops, s,
@@ -409,6 +439,9 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     nv11_vga_init(s, dev, errp);
     nv11_window_init(s);
     nv11_prome_init(s);
+    nv11_pgraph_init(s);
+    nv11_fifo_init(s);
+    nv11_2d_init(s);
 
     pci_set_word(dev->config + PCI_COMMAND,
                  PCI_COMMAND_IO | PCI_COMMAND_MEMORY);

@@ -49,6 +49,13 @@
 #define NV11_PEXTDEV_END         0x102000
 #define NV11_PROM_OFF            0x300000
 #define NV11_PROM_END            0x310000
+#define NV11_PGRAPH_OFF          0x400000
+#define NV11_PGRAPH_END          0x401000
+#define NV11_PFIFO_OFF           0x002000
+#define NV11_PTMR_OFF            0x009000
+#define NV11_PRAMIN_OFF          0x700000
+#define NV11_FIFO_OFF            0x800000
+#define NV11_FIFO_END            0x810000
 #define NV11_PCRTC0_OFF          0x600000
 #define NV11_PCRTC0_END          0x601000
 #define NV11_PRMCIO0_OFF         0x601000
@@ -104,6 +111,98 @@
 /* PEXTDEV registers (within 0x1000 block) */
 #define NV11_PEXTDEV_BOOT_0      0x000000
 
+/* PGRAPH registers (within 0x1000 block, BAR0 0x400000) */
+#define NV11_PGRAPH_INTR         0x000100
+#define NV11_PGRAPH_INTR_EN      0x000140
+#define NV11_PGRAPH_STATUS       0x000700   /* bit0 = busy */
+#define NV11_PGRAPH_CTX_CTRL     0x000710
+#define NV11_PGRAPH_FIFO         0x000720   /* bit0 = fifo enable */
+
+/* FIFO window
+ * NV11 has 8 subchannels of 0x2000 bytes each. Every channel:
+ *   +0x00   U032   context / RAMIN-instance binding
+ *   +0x10   U016   FIFOFree (free bytes in this subchannel)
+ *   +0x12   U016   NOP
+ *   +0x40   U032   DMA_PUT  (write-only, pushbuffer end, sync FIFO)
+ *   +0x44   U032   DMA_GET  (read-only)
+ *   +0x48   U032   REF      (read-only, fence counter, NV10+)
+ *   +0x300+        32-bit method register bank
+ */
+#define NV11_FIFO_CHANNELS       8
+#define NV11_FIFO_CHAN_SIZE      0x2000
+#define NV11_FIFO_CONTEXT_OFF    0x0000
+#define NV11_FIFO_FREE_OFF       0x0010
+#define NV11_FIFO_METHOD_OFF     0x0300
+#define NV11_FIFO_DMA_PUT_OFF    0x0040
+#define NV11_FIFO_DMA_GET_OFF    0x0044
+#define NV11_FIFO_FULL           0x0800   /* FIFOFree start/idle watermark (bytes) */
+#define NV11_FIFO_DRAIN_NS       (NANOSECONDS_PER_SECOND / 1000)
+
+/* DMA pusher: ring at VRAM FbUsableSize, 32 KB, word-addressed */
+#define NV11_DMA_RING_SIZE       0x8000
+#define NV11_DMA_RING_MASK       0x7FFF
+
+/*
+ * FIFO 2D subchannels
+ *
+ *   subch0 = ClipRect (0x19)  — SetPoint / SetSize
+ *   subch1 = ROP      (0x43)  — SetRop3
+ *   subch2 = Pattern  (0x18)  — SetMonochromeFormat / colors / mono
+ *   subch3 = Pixmap   (0x21)  — (not used yet)
+ *   subch4 = spare    (?)     — ???
+ *   subch5 = Blt      (0x5F)  — SetSrcPoint / SetDstPoint / SetSize
+ *   subch6 = Bitmap   (0x4B)  — Color1A / RectTL / RectWH (fire)
+ *   subch7 = Line     (0x48)  — (not used yet)
+ */
+#define NV11_2D_CH_CLIP          0   /* Clip rectangle (class 0x19) */
+#define NV11_2D_CH_ROP           1   /* 2D RasterOp (class 0x43) */
+#define NV11_2D_CH_PATT          2   /* 8x8 mono pattern (class 0x18) */
+#define NV11_2D_CH_BLT           5   /* Screen-to-screen blt (class 0x5F) */
+#define NV11_2D_CH_BITMAP        6   /* Fill rect / color expand (class 0x4B) */
+#define NV11_2D_CH_LINE          7   /* 2D line (class 0x48) */
+
+/* Surface geometry */
+#define NV11_2D_SURF_OFF_0       0x000640
+#define NV11_2D_SURF_PITCH_0     0x000670
+#define NV11_2D_SURF_FMT         0x000724   /* nibble0: 1=8, 2=15, 5=16, 7=32 */
+
+/* 2D Object Offsets */
+#define NV11_2D_ROP3             0x300
+#define NV11_2D_CLIP_TL          0x300
+#define NV11_2D_CLIP_WH          0x304
+#define NV11_2D_PATT_SHAPE       0x308
+#define NV11_2D_PATT_COLOR0      0x310
+#define NV11_2D_PATT_COLOR1      0x314
+#define NV11_2D_PATT_MONO0       0x318
+#define NV11_2D_PATT_MONO1       0x31C
+#define NV11_2D_BLT_TL_SRC       0x300
+#define NV11_2D_BLT_TL_DST       0x304
+#define NV11_2D_BLT_WH           0x308
+#define NV11_2D_BITMAP_COLOR1A   0x3FC
+#define NV11_2D_BITMAP_RECT_TL   0x400
+#define NV11_2D_BITMAP_RECT_WH   0x404
+#define NV11_2D_BITMAP_CLIPC_TL  0xBEC   /* transparent color-expand */
+#define NV11_2D_BITMAP_CLIPC_BR  0xBF0
+#define NV11_2D_BITMAP_COLOR1C   0xBF4
+#define NV11_2D_BITMAP_WHC       0xBF8
+#define NV11_2D_BITMAP_POINTC    0xBFC
+#define NV11_2D_BITMAP_MONOC     0xC00
+#define NV11_2D_BITMAP_CLIPE_TL  0x13E4  /* opaque color-expand */
+#define NV11_2D_BITMAP_CLIPE_BR  0x13E8
+#define NV11_2D_BITMAP_COLOR0E   0x13EC
+#define NV11_2D_BITMAP_COLOR1E   0x13F0
+#define NV11_2D_BITMAP_WHINE     0x13F4
+#define NV11_2D_BITMAP_WHOUTE    0x13F8
+#define NV11_2D_BITMAP_POINTE    0x13FC
+#define NV11_2D_BITMAP_MONOE     0x1400
+#define NV11_2D_LINE_COLOR       0x304
+#define NV11_2D_LINE_P0          0x400
+#define NV11_2D_LINE_P1          0x404
+#define NV11_2D_LINE_P0B         0x408
+#define NV11_2D_LINE_P1B         0x40C
+
+#define NV11_2D_EXP_BUF_DWORDS   64
+
 /* Window opcodes */
 #define NV11_WINDOW_OP_INDEX     3
 #define NV11_WINDOW_OP_READ      5
@@ -111,6 +210,13 @@
 
 /* CRTC extended index */
 #define NV11_CRTC_WIN_OP         0x38
+
+/* Hardware cursor register locations (head 0) */
+#define NV11_CRTC_HCUR_ADDR0     0x30   /* image addr bits 17-11, bit7 = ASI */
+#define NV11_CRTC_HCUR_ADDR1     0x31   /* image addr bits 10-2, bit0 = ENABLE */
+#define NV11_CRTC_HCUR_ADDR2     0x2F   /* image addr bits 31-24 */
+#define NV11_PRAMDAC_CUR_POS     0x300  /* (Y<<16)|X cursor position */
+#define NV11_PCRTC_CURSOR_CFG    0x810  /* 64x64 ARGB cursor configuration */
 
 /* EIP handler for debugging */
 static inline uint32_t nv11_get_eip(void)
@@ -131,6 +237,7 @@ typedef struct NV11State {
     uint8_t     bar0_flat[NV11_BAR0_SIZE];
     MemoryRegion bar1;
     MemoryRegion window_io;
+    uint8_t     *vram_ptr;      /* host pointer to vga.vram, for DMA ring */
 
     /* Serial I/O */
     uint32_t win_addr;      /* latched BAR0 offset (set by INDEX op) */
@@ -153,6 +260,49 @@ typedef struct NV11State {
 
     /* Extended CRTC */
     uint8_t  nv_crtc_reg[256];
+
+    /* FIFO window subchannel. One per 0x2000-byte channel. */
+    struct {
+        uint32_t methods[NV11_FIFO_CHAN_SIZE / 4]; /* Shadow of whole channel */
+        uint16_t fifo_free;                        /* FIFOFree (bytes) */
+        uint32_t pending;                          /* dwords queued, not drained */
+        uint32_t dma_get;                          /* DMA pusher GET pointer (bytes) */
+    } fifo[NV11_FIFO_CHANNELS];
+
+    /* PGRAPH */
+    uint32_t pgraph_scratch[(NV11_PGRAPH_END - NV11_PGRAPH_OFF) / 4];
+    bool     pgraph_busy;    /* PGRAPH[0x700] bit0, set on FIFO method write */
+
+    /* FIFO window drain timer */
+    QEMUTimer  *fifo_timer;
+
+    /* 2D/D2D engine */
+    uint32_t d2d_rop3;
+    uint32_t d2d_clip_tl, d2d_clip_wh;         /* (y<<16)|x, (h<<16)|w */
+    uint32_t d2d_pat_shape, d2d_pat_col0, d2d_pat_col1;
+    uint32_t d2d_pat_mono[2];
+    uint32_t d2d_col1a;                        /* Bitmap solid color */
+    uint32_t d2d_rect_tl;
+    uint32_t d2d_blt_src, d2d_blt_dst;
+    uint32_t d2d_line_color, d2d_line_p0, d2d_line_p0b;
+    bool     d2d_exp_active, d2d_exp_opaque;
+    uint32_t d2d_clip_c_tl, d2d_clip_c_br;
+    uint32_t d2d_clip_e_tl, d2d_clip_e_br;
+    uint32_t d2d_exp_wh;
+    uint32_t d2d_exp_fg, d2d_exp_bg;
+    uint32_t d2d_exp_x, d2d_exp_y;
+    uint32_t d2d_exp_h, d2d_exp_bw;
+    int      d2d_exp_bw32, d2d_exp_row, d2d_exp_dw;
+    uint32_t d2d_exp_buf[NV11_2D_EXP_BUF_DWORDS];
+
+    /* Hardware cursor (head 0) */
+    uint32_t cur_pos;           /* NV_PRAMDAC_CU_START_POS: (Y<<16)|X */
+    uint32_t cur_cfg;           /* NV_PCRTC_CURSOR_CONFIG */
+    uint32_t cur_img;           /* cursor image byte offset in VRAM */
+    bool     cur_enabled;       /* HCUR_ADDR1 bit0 */
+    uint32_t last_cur_pos;      /* last-drawn position, for invalidation */
+    uint32_t last_cur_img;
+    bool     last_cur_enabled;
 } NV11State;
 
 #define TYPE_NV11 "nv11"
@@ -168,8 +318,23 @@ void nv11_vga_class_reset(ObjectClass *klass);
 int nv11_get_bpp(VGACommonState *s);
 void nv11_get_params(VGACommonState *s, VGADisplayParams *params);
 void nv11_get_resolution(VGACommonState *s, int *pwidth, int *pheight);
+void nv11_cursor_invalidate(VGACommonState *s);
+void nv11_cursor_draw_line(VGACommonState *s, uint8_t *d, int y);
 void nv11_window_init(NV11State *s);
 void nv11_prome_init(NV11State *s);
+void nv11_fifo_init(NV11State *s);
+void nv11_fifo_reset(NV11State *s);
+uint64_t nv11_fifo_read(NV11State *s, hwaddr offset, unsigned size);
+void nv11_fifo_write(NV11State *s, hwaddr offset, uint64_t val,
+                     unsigned size);
+void nv11_pgraph_init(NV11State *s);
+void nv11_pgraph_reset(NV11State *s);
+uint64_t nv11_pgraph_read(NV11State *s, hwaddr offset, unsigned size);
+void nv11_pgraph_write(NV11State *s, hwaddr offset, uint64_t val,
+                       unsigned size);
+void nv11_2d_init(NV11State *s);
+void nv11_2d_reset(NV11State *s);
+void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val);
 
 uint64_t nv11_bar0_read(NV11State *s, hwaddr offset, unsigned size);
 void nv11_bar0_write(NV11State *s, hwaddr offset, uint64_t val,
