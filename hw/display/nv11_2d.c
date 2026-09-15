@@ -177,13 +177,8 @@ static void nv11_2d_fill_rect(NV11State *s, int32_t x, int32_t y,
     }
     nv11_2d_surface(s, &sf);
 
-    x0 = x; y0 = y; x1 = x + w; y1 = y + h;
-    x0 = MAX(x0, s->d2d_clip_tl & 0xFFFF);
-    y0 = MAX(y0, s->d2d_clip_tl >> 16);
-    x1 = MIN(x1, (s->d2d_clip_tl & 0xFFFF) + (s->d2d_clip_wh & 0xFFFF));
-    y1 = MIN(y1, (s->d2d_clip_tl >> 16) + (s->d2d_clip_wh >> 16));
-    x0 = MAX(x0, 0); y0 = MAX(y0, 0);
-    x1 = MIN(x1, sf.w); y1 = MIN(y1, sf.h);
+    x0 = MAX(x, 0); y0 = MAX(y, 0);
+    x1 = MIN(x + w, sf.w); y1 = MIN(y + h, sf.h);
     if (x0 >= x1 || y0 >= y1) {
         return;
     }
