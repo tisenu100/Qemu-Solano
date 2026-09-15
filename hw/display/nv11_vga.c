@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/bswap.h"
 #include "hw/display/vga.h"
 #include "vga_regs.h"
 #include "nv11.h"
@@ -80,6 +81,84 @@ void nv11_get_resolution(VGACommonState *s, int *pwidth, int *pheight)
         ((s->cr[VGA_CRTC_OVERFLOW] & 0x02) << 7) |
         ((s->cr[VGA_CRTC_OVERFLOW] & 0x40) << 3);
     *pheight = (*pheight + 1);
+}
+
+static uint32_t nv11_cursor_blend(uint32_t fg, uint32_t bg)
+{
+    uint32_t a = fg >> 24;
+    uint32_t ia = 255 - a;
+    uint32_t r, g, b;
+
+    if (a == 0) {
+        return bg;
+    }
+    if (a == 255) {
+        return 0xFF000000 | (fg & 0x00FFFFFF);
+    }
+    r = (((fg >> 16) & 0xFF) * a + ((bg >> 16) & 0xFF) * ia) / 255;
+    g = (((fg >> 8) & 0xFF) * a + ((bg >> 8) & 0xFF) * ia) / 255;
+    b = ((fg & 0xFF) * a + (bg & 0xFF) * ia) / 255;
+    return 0xFF000000 | (r << 16) | (g << 8) | b;
+}
+
+/* The 64x64 ARGB cursor image is composited directly into the 32-bit shadow
+ * surface rows that Qemu's backend rebuilds each frame. */
+void nv11_cursor_invalidate(VGACommonState *vga)
+{
+    NV11State *s = container_of(vga, NV11State, vga);
+
+    if (s->last_cur_pos != s->cur_pos ||
+        s->last_cur_img != s->cur_img ||
+        s->last_cur_enabled != s->cur_enabled) {
+        vga_invalidate_scanlines(vga, vga->hw_cursor_y,
+                                 vga->hw_cursor_y + 64);
+        vga->hw_cursor_x = s->cur_pos & 0xFFFF;
+        vga->hw_cursor_y = s->cur_pos >> 16;
+        s->last_cur_pos = s->cur_pos;
+        s->last_cur_img = s->cur_img;
+        s->last_cur_enabled = s->cur_enabled;
+        if (s->cur_enabled) {
+            vga_invalidate_scanlines(vga, vga->hw_cursor_y,
+                                     vga->hw_cursor_y + 64);
+        }
+    }
+}
+
+void nv11_cursor_draw_line(VGACommonState *vga, uint8_t *d, int y)
+{
+    NV11State *s = container_of(vga, NV11State, vga);
+    uint32_t *dp;
+    uint32_t row;
+    int cx, cy, i;
+
+    if (!s->cur_enabled) {
+        return;
+    }
+    cy = s->cur_pos >> 16;
+    if (y < cy || y >= cy + 64) {
+        return;
+    }
+    row = s->cur_img + (uint32_t)(y - cy) * 256;
+    if (row + 256 > vga->vram_size) {
+        return;
+    }
+    cx = s->cur_pos & 0xFFFF;
+    if (cx >= vga->last_scr_width) {
+        return;
+    }
+    dp = (uint32_t *)d + cx;
+    for (i = 0; i < 64; i++) {
+        uint32_t px;
+
+        if (cx + i >= vga->last_scr_width) {
+            break;
+        }
+        px = ldl_le_p(vga->vram_ptr + row + i * 4);
+        if ((px >> 24) == 0) {
+            continue;   /* Fully transparent */
+        }
+        dp[i] = nv11_cursor_blend(px, dp[i]);
+    }
 }
 
 static uint32_t nv11_vga_ioport_read(void *opaque, uint32_t addr)
@@ -141,6 +220,8 @@ static void nv11_vga_reset(DeviceState *dev)
 {
     NV11State *s = NV11(dev);
     vga_common_reset(&s->vga);
+    nv11_pgraph_reset(s);
+    nv11_fifo_reset(s);
 }
 
 void nv11_vga_class_reset(ObjectClass *klass)

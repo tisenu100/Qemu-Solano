@@ -60,6 +60,20 @@ void nv11_pcrtc_write(NV11State *s, uint8_t index, uint8_t value)
         s->win_op = value & 7;
         trace_nv11_window_opcode(eip, value, s->win_op);
         break;
+    case NV11_CRTC_HCUR_ADDR2:
+    case NV11_CRTC_HCUR_ADDR0:
+    case NV11_CRTC_HCUR_ADDR1:
+        /* Recompute the 64x64 ARGB hardware cursor image address + enable */
+        s->cur_img = ((uint32_t)s->nv_crtc_reg[NV11_CRTC_HCUR_ADDR2] << 24) |
+                     ((uint32_t)(s->nv_crtc_reg[NV11_CRTC_HCUR_ADDR0] &
+                                 0x7F) << 17) |
+                     ((uint32_t)(s->nv_crtc_reg[NV11_CRTC_HCUR_ADDR1] &
+                                 0xFC) << 9);
+        s->cur_enabled = (s->nv_crtc_reg[NV11_CRTC_HCUR_ADDR1] & 1) != 0;
+        trace_nv11_cur_state(eip, s->cur_img,
+                             s->cur_pos & 0xFFFF, s->cur_pos >> 16,
+                             s->cur_cfg, s->cur_enabled);
+        break;
     case 0x2E:
         trace_nv11_pcrtc_strap_write(eip, index, value);
         break;
