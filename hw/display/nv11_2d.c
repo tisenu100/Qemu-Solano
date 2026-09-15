@@ -54,11 +54,17 @@ static void nv11_2d_surface(NV11State *s, Nv11Surf *sf)
     if (sf->w <= 0 || sf->w > 0x4000) {
         sf->w = 1024;
     }
-    if (sf->h <= 0 || sf->h > 0x4000) {
-        sf->h = 768;
-    }
     if (!sf->bpr) {
         sf->bpr = (sf->w * sf->bpp) / 8;
+    }
+    if (sf->bpr > 0) {
+        uint32_t avail = (sf->off < s->vga.vram_size)
+                         ? (s->vga.vram_size - sf->off) : 0;
+        uint32_t maxr = avail / sf->bpr;
+
+        sf->h = (maxr > 0) ? MIN(maxr, 0x4000) : 768;
+    } else {
+        sf->h = 768;
     }
 }
 
@@ -487,6 +493,23 @@ static void nv11_2d_bitmap_method(NV11State *s, uint32_t reg, uint32_t val)
     }
 }
 
+static void nv11_2d_line_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    if (reg == NV11_2D_LINE_COLOR) {
+        s->d2d_line_color = val;
+    } else if (reg == NV11_2D_LINE_P0) {
+        s->d2d_line_p0 = val;
+    } else if (reg == NV11_2D_LINE_P1) {
+        nv11_2d_line(s, s->d2d_line_p0 & 0xFFFF, s->d2d_line_p0 >> 16,
+                     val & 0xFFFF, val >> 16);
+    } else if (reg == NV11_2D_LINE_P0B) {
+        s->d2d_line_p0b = val;
+    } else if (reg == NV11_2D_LINE_P1B) {
+        nv11_2d_line(s, s->d2d_line_p0b & 0xFFFF,
+                     s->d2d_line_p0b >> 16, val & 0xFFFF, val >> 16);
+    }
+}
+
 void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
 {
     uint32_t eip = nv11_get_eip();
@@ -536,19 +559,8 @@ void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
         nv11_2d_bitmap_method(s, reg, val);
         break;
     case NV11_2D_CH_LINE:
-        if (reg == NV11_2D_LINE_COLOR) {
-            s->d2d_line_color = val;
-        } else if (reg == NV11_2D_LINE_P0) {
-            s->d2d_line_p0 = val;
-        } else if (reg == NV11_2D_LINE_P1) {
-            nv11_2d_line(s, s->d2d_line_p0 & 0xFFFF, s->d2d_line_p0 >> 16,
-                         val & 0xFFFF, val >> 16);
-        } else if (reg == NV11_2D_LINE_P0B) {
-            s->d2d_line_p0b = val;
-        } else if (reg == NV11_2D_LINE_P1B) {
-            nv11_2d_line(s, s->d2d_line_p0b & 0xFFFF,
-                         s->d2d_line_p0b >> 16, val & 0xFFFF, val >> 16);
-        }
+    case NV11_2D_CH_LINE2:
+        nv11_2d_line_method(s, reg, val);
         break;
     default:
         break;
