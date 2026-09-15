@@ -54,11 +54,17 @@ static void nv11_2d_surface(NV11State *s, Nv11Surf *sf)
     if (sf->w <= 0 || sf->w > 0x4000) {
         sf->w = 1024;
     }
-    if (sf->h <= 0 || sf->h > 0x4000) {
-        sf->h = 768;
-    }
     if (!sf->bpr) {
         sf->bpr = (sf->w * sf->bpp) / 8;
+    }
+    if (sf->bpr > 0) {
+        uint32_t avail = (sf->off < s->vga.vram_size)
+                         ? (s->vga.vram_size - sf->off) : 0;
+        uint32_t maxr = avail / sf->bpr;
+
+        sf->h = (maxr > 0) ? MIN(maxr, 0x4000) : 768;
+    } else {
+        sf->h = 768;
     }
 }
 
@@ -171,13 +177,8 @@ static void nv11_2d_fill_rect(NV11State *s, int32_t x, int32_t y,
     }
     nv11_2d_surface(s, &sf);
 
-    x0 = x; y0 = y; x1 = x + w; y1 = y + h;
-    x0 = MAX(x0, s->d2d_clip_tl & 0xFFFF);
-    y0 = MAX(y0, s->d2d_clip_tl >> 16);
-    x1 = MIN(x1, (s->d2d_clip_tl & 0xFFFF) + (s->d2d_clip_wh & 0xFFFF));
-    y1 = MIN(y1, (s->d2d_clip_tl >> 16) + (s->d2d_clip_wh >> 16));
-    x0 = MAX(x0, 0); y0 = MAX(y0, 0);
-    x1 = MIN(x1, sf.w); y1 = MIN(y1, sf.h);
+    x0 = MAX(x, 0); y0 = MAX(y, 0);
+    x1 = MIN(x + w, sf.w); y1 = MIN(y + h, sf.h);
     if (x0 >= x1 || y0 >= y1) {
         return;
     }
@@ -487,6 +488,23 @@ static void nv11_2d_bitmap_method(NV11State *s, uint32_t reg, uint32_t val)
     }
 }
 
+static void nv11_2d_line_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    if (reg == NV11_2D_LINE_COLOR) {
+        s->d2d_line_color = val;
+    } else if (reg == NV11_2D_LINE_P0) {
+        s->d2d_line_p0 = val;
+    } else if (reg == NV11_2D_LINE_P1) {
+        nv11_2d_line(s, s->d2d_line_p0 & 0xFFFF, s->d2d_line_p0 >> 16,
+                     val & 0xFFFF, val >> 16);
+    } else if (reg == NV11_2D_LINE_P0B) {
+        s->d2d_line_p0b = val;
+    } else if (reg == NV11_2D_LINE_P1B) {
+        nv11_2d_line(s, s->d2d_line_p0b & 0xFFFF,
+                     s->d2d_line_p0b >> 16, val & 0xFFFF, val >> 16);
+    }
+}
+
 void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
 {
     uint32_t eip = nv11_get_eip();
@@ -536,19 +554,8 @@ void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
         nv11_2d_bitmap_method(s, reg, val);
         break;
     case NV11_2D_CH_LINE:
-        if (reg == NV11_2D_LINE_COLOR) {
-            s->d2d_line_color = val;
-        } else if (reg == NV11_2D_LINE_P0) {
-            s->d2d_line_p0 = val;
-        } else if (reg == NV11_2D_LINE_P1) {
-            nv11_2d_line(s, s->d2d_line_p0 & 0xFFFF, s->d2d_line_p0 >> 16,
-                         val & 0xFFFF, val >> 16);
-        } else if (reg == NV11_2D_LINE_P0B) {
-            s->d2d_line_p0b = val;
-        } else if (reg == NV11_2D_LINE_P1B) {
-            nv11_2d_line(s, s->d2d_line_p0b & 0xFFFF,
-                         s->d2d_line_p0b >> 16, val & 0xFFFF, val >> 16);
-        }
+    case NV11_2D_CH_LINE2:
+        nv11_2d_line_method(s, reg, val);
         break;
     default:
         break;

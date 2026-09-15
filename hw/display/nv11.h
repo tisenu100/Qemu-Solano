@@ -149,14 +149,15 @@
  *   subch1 = ROP      (0x43)  — SetRop3
  *   subch2 = Pattern  (0x18)  — SetMonochromeFormat / colors / mono
  *   subch3 = Pixmap   (0x21)  — (not used yet)
- *   subch4 = spare    (?)     — ???
+ *   subch4 = Line     (0x48)  — SetColor / SetP0 / SetP1 (bevel strips)
  *   subch5 = Blt      (0x5F)  — SetSrcPoint / SetDstPoint / SetSize
  *   subch6 = Bitmap   (0x4B)  — Color1A / RectTL / RectWH (fire)
- *   subch7 = Line     (0x48)  — (not used yet)
+ *   subch7 = Line     (0x48)  — (second line object)
  */
 #define NV11_2D_CH_CLIP          0   /* Clip rectangle (class 0x19) */
 #define NV11_2D_CH_ROP           1   /* 2D RasterOp (class 0x43) */
 #define NV11_2D_CH_PATT          2   /* 8x8 mono pattern (class 0x18) */
+#define NV11_2D_CH_LINE2         4   /* 2D line, class 0x48 (nv4_mini layout) */
 #define NV11_2D_CH_BLT           5   /* Screen-to-screen blt (class 0x5F) */
 #define NV11_2D_CH_BITMAP        6   /* Fill rect / color expand (class 0x4B) */
 #define NV11_2D_CH_LINE          7   /* 2D line (class 0x48) */
