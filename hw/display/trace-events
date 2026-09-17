@@ -289,6 +289,7 @@ nv11_pgraph_idle(uint32_t eip) "NV11: [PGRAPH] [eip=0x%"PRIx32"] BUSY cleared (e
 # nv11_2d.c
 nv11_2d_reset(void) "NV11: [2D] reset"
 nv11_2d_method(uint32_t eip, uint32_t chan, uint32_t reg, uint32_t val) "NV11: [2D] [eip=0x%"PRIx32"] subch%u method 0x%"PRIx32" <- 0x%"PRIx32
+nv11_2d_ignored(uint32_t eip, uint32_t chan, uint32_t reg, uint32_t val, uint32_t cls) "NV11: [2D] [eip=0x%"PRIx32"] subch%u method 0x%"PRIx32" <- 0x%"PRIx32" ignored (class 0x%"PRIx32")"
 nv11_2d_fill(uint32_t eip, int x, int y, int w, int h, int bpp, uint32_t rop) "NV11: [2D] [eip=0x%"PRIx32"] fill %d,%d %dx%d bpp=%d rop=0x%"PRIx32
 nv11_2d_blit(uint32_t eip, int sx, int sy, int dx, int dy, int w, int h) "NV11: [2D] [eip=0x%"PRIx32"] blit (%d,%d)->(%d,%d) %dx%d"
 nv11_2d_expand(uint32_t eip, int x, int y, int w, int h, int opaque) "NV11: [2D] [eip=0x%"PRIx32"] expand %d,%d %dx%d opaque=%d"

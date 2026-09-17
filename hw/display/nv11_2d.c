@@ -505,59 +505,108 @@ static void nv11_2d_line_method(NV11State *s, uint32_t reg, uint32_t val)
     }
 }
 
+static void nv11_2d_rop_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    if (reg == NV11_2D_ROP3) {
+        s->d2d_rop3 = val & 0xFF;
+    }
+}
+
+static void nv11_2d_clip_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    if (reg == NV11_2D_CLIP_TL) {
+        s->d2d_clip_tl = val;
+    } else if (reg == NV11_2D_CLIP_WH) {
+        s->d2d_clip_wh = val;
+    }
+}
+
+static void nv11_2d_patt_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    if (reg == NV11_2D_PATT_SHAPE) {
+        s->d2d_pat_shape = val;
+    } else if (reg == NV11_2D_PATT_COLOR0) {
+        s->d2d_pat_col0 = val;
+    } else if (reg == NV11_2D_PATT_COLOR1) {
+        s->d2d_pat_col1 = val;
+    } else if (reg == NV11_2D_PATT_MONO0) {
+        s->d2d_pat_mono[0] = val;
+    } else if (reg == NV11_2D_PATT_MONO1) {
+        s->d2d_pat_mono[1] = val;
+    }
+}
+
+static void nv11_2d_blt_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    if (reg == NV11_2D_BLT_TL_SRC) {
+        s->d2d_blt_src = val;
+    } else if (reg == NV11_2D_BLT_TL_DST) {
+        s->d2d_blt_dst = val;
+    } else if (reg == NV11_2D_BLT_WH) {
+        int32_t sx = s->d2d_blt_src & 0xFFFF;
+        int32_t sy = s->d2d_blt_src >> 16;
+        int32_t dx = s->d2d_blt_dst & 0xFFFF;
+        int32_t dy = s->d2d_blt_dst >> 16;
+        nv11_2d_blit(s, sx, sy, dx, dy, val & 0xFFFF, val >> 16);
+    }
+}
+
+static void nv11_2d_surface_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    switch (reg) {
+    case NV11_2D_SURF_FMT_M:
+        switch (val & 0x7) {
+        case 0x1: val = 0x1; break;   /* 8 bpp  */
+        case 0x2: val = 0x2; break;   /* 15 bpp */
+        case 0x4: val = 0x5; break;   /* 16 bpp */
+        default:  val = 0x7; break;   /* 24/32  */
+        }
+        s->pgraph_scratch[NV11_2D_SURF_FMT / 4] = val;
+        break;
+    case NV11_2D_SURF_PITCH_M:
+        s->pgraph_scratch[NV11_2D_SURF_PITCH_0 / 4] = val & 0xFFFF;
+        break;
+    case NV11_2D_SURF_OFF_M:
+        s->pgraph_scratch[NV11_2D_SURF_OFF_0 / 4] = val;
+        break;
+    }
+}
+
 void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
 {
     uint32_t eip = nv11_get_eip();
+    uint8_t cls = s->ch_class[chan];
 
     trace_nv11_2d_method(eip, chan, reg, val);
 
-    switch (chan) {
-    case NV11_2D_CH_ROP:
-        if (reg == NV11_2D_ROP3) {
-            s->d2d_rop3 = val & 0xFF;
-        }
+    switch (cls) {
+    case NV11_CLASS_ROP:
+        nv11_2d_rop_method(s, reg, val);
         break;
-    case NV11_2D_CH_CLIP:
-        if (reg == NV11_2D_CLIP_TL) {
-            s->d2d_clip_tl = val;
-        } else if (reg == NV11_2D_CLIP_WH) {
-            s->d2d_clip_wh = val;
-        }
+    case NV11_CLASS_CLIP:
+        nv11_2d_clip_method(s, reg, val);
         break;
-    case NV11_2D_CH_PATT:
-        if (reg == NV11_2D_PATT_SHAPE) {
-            s->d2d_pat_shape = val;
-        } else if (reg == NV11_2D_PATT_COLOR0) {
-            s->d2d_pat_col0 = val;
-        } else if (reg == NV11_2D_PATT_COLOR1) {
-            s->d2d_pat_col1 = val;
-        } else if (reg == NV11_2D_PATT_MONO0) {
-            s->d2d_pat_mono[0] = val;
-        } else if (reg == NV11_2D_PATT_MONO1) {
-            s->d2d_pat_mono[1] = val;
-        }
+    case NV11_CLASS_PATT:
+    case NV11_CLASS_PATT_NV4:
+        nv11_2d_patt_method(s, reg, val);
         break;
-    case NV11_2D_CH_BLT:
-        if (reg == NV11_2D_BLT_TL_SRC) {
-            s->d2d_blt_src = val;
-        } else if (reg == NV11_2D_BLT_TL_DST) {
-            s->d2d_blt_dst = val;
-        } else if (reg == NV11_2D_BLT_WH) {
-            int32_t sx = s->d2d_blt_src & 0xFFFF;
-            int32_t sy = s->d2d_blt_src >> 16;
-            int32_t dx = s->d2d_blt_dst & 0xFFFF;
-            int32_t dy = s->d2d_blt_dst >> 16;
-            nv11_2d_blit(s, sx, sy, dx, dy, val & 0xFFFF, val >> 16);
-        }
+    case NV11_CLASS_SURF:
+        nv11_2d_surface_method(s, reg, val);
         break;
-    case NV11_2D_CH_BITMAP:
+    case NV11_CLASS_BLT:
+        nv11_2d_blt_method(s, reg, val);
+        break;
+    case NV11_CLASS_GDI:
+    case NV11_CLASS_RECT_NV4:
         nv11_2d_bitmap_method(s, reg, val);
         break;
-    case NV11_2D_CH_LINE:
-    case NV11_2D_CH_LINE2:
+    case NV11_CLASS_LINE:
+    case NV11_CLASS_LINE_NV4:
+    case NV11_CLASS_LIN:
         nv11_2d_line_method(s, reg, val);
         break;
     default:
+        trace_nv11_2d_ignored(eip, chan, reg, val, cls);
         break;
     }
 }
