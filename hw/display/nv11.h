@@ -127,6 +127,13 @@
  *   +0x44   U032   DMA_GET  (read-only)
  *   +0x48   U032   REF      (read-only, fence counter, NV10+)
  *   +0x300+        32-bit method register bank
+ *
+ * FIFO subchannels
+ *
+ * The 8 subchannels carry no fixed Nvidia-defined role: each is bound to an
+ * object by a context write (0x8000000X, decoded through the RAMIN
+ * instance/object table), and method traffic is dispatched purely on the
+ * bound class. A subchannel with no binding (ch_class = 0) ignores methods.
  */
 #define NV11_FIFO_CHANNELS       8
 #define NV11_FIFO_CHAN_SIZE      0x2000
@@ -142,25 +149,26 @@
 #define NV11_DMA_RING_SIZE       0x8000
 #define NV11_DMA_RING_MASK       0x7FFF
 
-/*
- * FIFO 2D subchannels
- *
- *   subch0 = ClipRect (0x19)  — SetPoint / SetSize
- *   subch1 = ROP      (0x43)  — SetRop3
- *   subch2 = Pattern  (0x18)  — SetMonochromeFormat / colors / mono
- *   subch3 = Pixmap   (0x21)  — (not used yet)
- *   subch4 = Line     (0x48)  — SetColor / SetP0 / SetP1 (bevel strips)
- *   subch5 = Blt      (0x5F)  — SetSrcPoint / SetDstPoint / SetSize
- *   subch6 = Bitmap   (0x4B)  — Color1A / RectTL / RectWH (fire)
- *   subch7 = Line     (0x48)  — (second line object)
- */
-#define NV11_2D_CH_CLIP          0   /* Clip rectangle (class 0x19) */
-#define NV11_2D_CH_ROP           1   /* 2D RasterOp (class 0x43) */
-#define NV11_2D_CH_PATT          2   /* 8x8 mono pattern (class 0x18) */
-#define NV11_2D_CH_LINE2         4   /* 2D line, class 0x48 (nv4_mini layout) */
-#define NV11_2D_CH_BLT           5   /* Screen-to-screen blt (class 0x5F) */
-#define NV11_2D_CH_BITMAP        6   /* Fill rect / color expand (class 0x4B) */
-#define NV11_2D_CH_LINE          7   /* 2D line (class 0x48) */
+/* 2D Object Class IDs (Defined by envytools method Nvidia Generation_Command ) */
+#define NV11_CLASS_NONE          0x00
+#define NV11_CLASS_PATT          0x18   /* NV1_PATTERN */
+#define NV11_CLASS_CLIP          0x19   /* NV1_CLIP */
+#define NV11_CLASS_IFC           0x21   /* NV1_IFC (pixmap) */
+#define NV11_CLASS_ROP           0x43   /* NV3_ROP */
+#define NV11_CLASS_PATT_NV4      0x44   /* NV4_PATTERN */
+#define NV11_CLASS_LINE          0x48   /* NV1_LIN */
+#define NV11_CLASS_GDI           0x4B   /* NV3_GDI */
+#define NV11_CLASS_RECT_NV4      0x4A   /* NV4_GDI (fill rect) */
+#define NV11_CLASS_LINE_NV4      0x5C   /* NV4_LIN */
+#define NV11_CLASS_BLT           0x5F   /* NV4_BLIT */
+#define NV11_CLASS_LIN           0x1C   /* NV1_LIN */
+#define NV11_CLASS_SURF          0x62   /* NV4_SURFACE */
+
+/* RAMIN instance table: context value 0x8000000X selects instance X, whose
+ * entry lives at (X ^ 0x10) * 8 within the table; dword1's low 15 bits are
+ * the (word) pointer to the class object at NV11_RAMIN_OBJ_BASE + p << 4. */
+#define NV11_RAMIN_OBJ_BASE      0x700000
+#define NV11_RAMIN_INST_TABLE    0x710000
 
 /* Surface geometry */
 #define NV11_2D_SURF_OFF_0       0x000640
@@ -176,6 +184,9 @@
 #define NV11_2D_PATT_COLOR1      0x314
 #define NV11_2D_PATT_MONO0       0x318
 #define NV11_2D_PATT_MONO1       0x31C
+#define NV11_2D_SURF_FMT_M       0x300   /* class 0x62: 1=8, 2=15, 4=16, 6=24 */
+#define NV11_2D_SURF_PITCH_M     0x304   /* (dst<<16)|src */
+#define NV11_2D_SURF_OFF_M       0x308
 #define NV11_2D_BLT_TL_SRC       0x300
 #define NV11_2D_BLT_TL_DST       0x304
 #define NV11_2D_BLT_WH           0x308
@@ -269,6 +280,10 @@ typedef struct NV11State {
         uint32_t pending;                          /* dwords queued, not drained */
         uint32_t dma_get;                          /* DMA pusher GET pointer (bytes) */
     } fifo[NV11_FIFO_CHANNELS];
+
+    /* Per-subchannel object class, decoded from RAMIN on context bind.
+     * 0 = unbound: nv11_2d_method ignores the method. */
+    uint8_t  ch_class[NV11_FIFO_CHANNELS];
 
     /* PGRAPH */
     uint32_t pgraph_scratch[(NV11_PGRAPH_END - NV11_PGRAPH_OFF) / 4];

@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/timer.h"
+#include "qemu/bswap.h"
 #include "nv11.h"
 #include "trace.h"
 
@@ -74,6 +75,23 @@ static uint32_t nv11_fifo_shadow_read(NV11State *s, uint32_t chan, uint32_t reg,
         break;
     }
     return val;
+}
+
+static uint8_t nv11_fifo_ramin_class(NV11State *s, uint32_t instance)
+{
+    uint32_t tab = NV11_RAMIN_INST_TABLE + ((instance & 0x7F) ^ 0x10) * 8;
+    uint32_t obj;
+
+    if (tab + 8 > NV11_BAR0_SIZE) {
+        return 0;
+    }
+    obj = ldl_le_p(s->bar0_flat + tab + 4) & 0x7FFF;
+    tab = NV11_RAMIN_OBJ_BASE + (obj << 4);
+    if (tab + 4 > NV11_BAR0_SIZE ||
+        !ldl_le_p(s->bar0_flat + tab)) {
+        return 0;
+    }
+    return ldl_le_p(s->bar0_flat + tab) & 0xFF;
 }
 
 static void nv11_fifo_drain(void *opaque)
@@ -145,6 +163,7 @@ static void nv11_fifo_dma_push(NV11State *s, uint32_t chan, uint32_t put)
             get += 4;
             if (reg == 0 && (val & 0x80000000)) {
                 trace_nv11_fifo_dma_bind(eip, sub, val);
+                s->ch_class[sub] = nv11_fifo_ramin_class(s, val & 0x7F);
                 continue;
             }
             trace_nv11_fifo_dma_method(eip, sub, reg + j * 4, val);
@@ -225,11 +244,15 @@ void nv11_fifo_write(NV11State *s, hwaddr offset, uint64_t val, unsigned size)
         return;
     }
 
-    /* Context bindings (e.g. 0x80000000 subch0 -> RAMIN0) are stored,
-     * not executed. */
+    /* Context bindings (e.g. 0x80000000 subch0 -> RAMIN0) select the object
+     * class for this subchannel; method writes dispatch on that class. */
     if (reg < NV11_FIFO_METHOD_OFF) {
         if (reg == NV11_FIFO_CONTEXT_OFF && size == 4) {
-            trace_nv11_fifo_context(eip, chan, (uint32_t)val);
+            uint32_t cv = (uint32_t)val;
+
+            trace_nv11_fifo_context(eip, chan, cv);
+            s->ch_class[chan] = (cv & 0x80000000)
+                                ? nv11_fifo_ramin_class(s, cv & 0x7F) : 0;
         }
         if (reg == NV11_FIFO_DMA_PUT_OFF && size == 4) {
             nv11_fifo_shadow_write(s, chan, reg, val, size);
@@ -270,6 +293,7 @@ void nv11_fifo_reset(NV11State *s)
         s->fifo[i].fifo_free = NV11_FIFO_FULL;
         s->fifo[i].pending = 0;
         s->fifo[i].dma_get = 0;
+        s->ch_class[i] = 0;
     }
     s->pgraph_busy = false;
 
