@@ -70,6 +70,8 @@
 #define NV11_PRAMDAC1_END        0x684000
 #define NV11_PRMDIO_OFF          0x6813C0
 #define NV11_PRMDIO_END          0x6813D0
+#define NV11_PVIO_OFF            0x0C0000
+#define NV11_PVIO_END            0x0C1000
 
 /* PBUS */
 #define NV11_PBUS_DEBUG_1        0x000084

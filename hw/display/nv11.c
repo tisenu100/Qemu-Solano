@@ -160,6 +160,19 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
         goto return_val;
     }
 
+    if (off >= NV11_PVIO_OFF && off < NV11_PVIO_END) {
+        uint32_t reg = off - NV11_PVIO_OFF;
+        trace_nv11_pmcio_read(eip, 0, reg, size);
+        if (reg >= 0x3B0 && reg <= 0x3DF) {
+            if (reg == 0x3D5 || reg == 0x3B5) {
+                val = nv11_pcrtc_read(s, s->vga.cr_index);
+            } else {
+                val = vga_ioport_read(&s->vga, reg);
+            }
+        }
+        goto return_val;
+    }
+
     if (off >= NV11_PRAMDAC0_OFF && off < NV11_PRAMDAC0_END) {
         uint32_t reg = off - NV11_PRAMDAC0_OFF;
         uint32_t idx = reg / 4;
@@ -319,6 +332,19 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
     if (off >= NV11_PRMDIO_OFF && off < NV11_PRMDIO_END) {
         uint32_t port = off - NV11_PRMDIO_OFF + 0x3C0;
         vga_ioport_write(&s->vga, port, (uint8_t)val);
+        return;
+    }
+
+    if (off >= NV11_PVIO_OFF && off < NV11_PVIO_END) {
+        uint32_t reg = off - NV11_PVIO_OFF;
+        trace_nv11_pmcio_write(eip, 0, reg, size, (uint32_t)val);
+        if (reg >= 0x3B0 && reg <= 0x3DF) {
+            if (reg == 0x3D5 || reg == 0x3B5) {
+                nv11_pcrtc_write(s, s->vga.cr_index, (uint8_t)val);
+            } else {
+                vga_ioport_write(&s->vga, reg, (uint8_t)val);
+            }
+        }
         return;
     }
 
