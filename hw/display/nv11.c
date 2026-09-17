@@ -73,6 +73,10 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
         goto flat_read;
     }
 
+    if (off >= NV11_PTMR_OFF && off < NV11_PTMR_END) {
+        return nv11_ptimer_read(s, off - NV11_PTMR_OFF, size);
+    }
+
     if (off >= NV11_PFB_OFF && off < NV11_PFB_END) {
         uint32_t reg = off - NV11_PFB_OFF;
         trace_nv11_pfb_read(eip, reg, size);
@@ -251,6 +255,11 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
             trace_nv11_pbus_rom_shadow(eip, s->rom_shadow_en);
         }
         goto flat_write;
+    }
+
+    if (off >= NV11_PTMR_OFF && off < NV11_PTMR_END) {
+        nv11_ptimer_write(s, off - NV11_PTMR_OFF, val, size);
+        return;
     }
 
     if (off >= NV11_PFB_OFF && off < NV11_PFB_END) {
@@ -466,6 +475,7 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     nv11_window_init(s);
     nv11_prome_init(s);
     nv11_pgraph_init(s);
+    nv11_ptimer_init(s);
     nv11_fifo_init(s);
     nv11_2d_init(s);
 
