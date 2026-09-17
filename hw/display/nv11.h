@@ -130,6 +130,11 @@
 #define NV11_PGRAPH_CTX_CTRL     0x000710
 #define NV11_PGRAPH_FIFO         0x000720   /* bit0 = fifo enable */
 
+/* PFIFO CACHE1 DMA context */
+#define NV11_PFIFO_CACHE1_DMA_FETCH          0x003224
+#define NV11_PFIFO_CACHE1_DMA_CTL            0x003230
+#define NV11_PFIFO_DMA_CTL_VALID             0x80000000u
+
 /* FIFO window
  * NV11 has 8 subchannels of 0x2000 bytes each. Every channel:
  *   +0x00   U032   context / RAMIN-instance binding
