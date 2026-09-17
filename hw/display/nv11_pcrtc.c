@@ -100,6 +100,10 @@ uint8_t nv11_pcrtc_read(NV11State *s, uint8_t index)
     switch (index) {
     case 0x2E:
         return 0x44;
+    case 0x36:
+        return 0xff;
+    case 0x3E:
+        return 0xff;
     case 0x3C:
         return 0x01;
     case 0x44:
@@ -119,7 +123,9 @@ void nv11_pcrtc_init(NV11State *s)
     s->pcrtc_scratch[1][NV11_PCRTC_INTR / 4] = 0;
 
     s->nv_crtc_reg[0x2E] = 0x44;
+    s->nv_crtc_reg[0x36] = 0xff;
     s->nv_crtc_reg[0x3C] = 0x01;
+    s->nv_crtc_reg[0x3E] = 0xff;
     s->nv_crtc_reg[0x44] = 0xB2;
     s->nv_crtc_reg[0x38] = 0x00;
 
