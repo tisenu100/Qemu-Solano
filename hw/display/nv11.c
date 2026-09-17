@@ -73,6 +73,29 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
         goto flat_read;
     }
 
+    if (off >= NV11_PTMR_OFF && off < NV11_PTMR_END) {
+        return nv11_ptimer_read(s, off - NV11_PTMR_OFF, size);
+    }
+
+    if (off >= NV11_PFIFO_CACHE1_DMA_CTL &&
+        off < NV11_PFIFO_CACHE1_DMA_CTL + 4) {
+        uint32_t fetch =
+            ldl_le_p((uint32_t *)(s->bar0_flat + NV11_PFIFO_CACHE1_DMA_FETCH));
+        val = ldl_le_p((uint32_t *)(s->bar0_flat +
+                                    NV11_PFIFO_CACHE1_DMA_CTL));
+        if (fetch != 0) {
+            /* DMA params latched: HW reports the context VALID.
+             * Same overlay pattern as PGRAPH STATUS busy bit. */
+            val |= NV11_PFIFO_DMA_CTL_VALID;
+        }
+        if (size == 1) {
+            val = (val >> (8 * (off & 0x3))) & 0xFF;
+        } else if (size == 2) {
+            val = (val >> (8 * (off & 0x3))) & 0xFFFF;
+        }
+        goto return_val;
+    }
+
     if (off >= NV11_PFB_OFF && off < NV11_PFB_END) {
         uint32_t reg = off - NV11_PFB_OFF;
         trace_nv11_pfb_read(eip, reg, size);
@@ -160,6 +183,19 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
         goto return_val;
     }
 
+    if (off >= NV11_PVIO_OFF && off < NV11_PVIO_END) {
+        uint32_t reg = off - NV11_PVIO_OFF;
+        trace_nv11_pmcio_read(eip, 0, reg, size);
+        if (reg >= 0x3B0 && reg <= 0x3DF) {
+            if (reg == 0x3D5 || reg == 0x3B5) {
+                val = nv11_pcrtc_read(s, s->vga.cr_index);
+            } else {
+                val = vga_ioport_read(&s->vga, reg);
+            }
+        }
+        goto return_val;
+    }
+
     if (off >= NV11_PRAMDAC0_OFF && off < NV11_PRAMDAC0_END) {
         uint32_t reg = off - NV11_PRAMDAC0_OFF;
         uint32_t idx = reg / 4;
@@ -238,6 +274,11 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
             trace_nv11_pbus_rom_shadow(eip, s->rom_shadow_en);
         }
         goto flat_write;
+    }
+
+    if (off >= NV11_PTMR_OFF && off < NV11_PTMR_END) {
+        nv11_ptimer_write(s, off - NV11_PTMR_OFF, val, size);
+        return;
     }
 
     if (off >= NV11_PFB_OFF && off < NV11_PFB_END) {
@@ -319,6 +360,19 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
     if (off >= NV11_PRMDIO_OFF && off < NV11_PRMDIO_END) {
         uint32_t port = off - NV11_PRMDIO_OFF + 0x3C0;
         vga_ioport_write(&s->vga, port, (uint8_t)val);
+        return;
+    }
+
+    if (off >= NV11_PVIO_OFF && off < NV11_PVIO_END) {
+        uint32_t reg = off - NV11_PVIO_OFF;
+        trace_nv11_pmcio_write(eip, 0, reg, size, (uint32_t)val);
+        if (reg >= 0x3B0 && reg <= 0x3DF) {
+            if (reg == 0x3D5 || reg == 0x3B5) {
+                nv11_pcrtc_write(s, s->vga.cr_index, (uint8_t)val);
+            } else {
+                vga_ioport_write(&s->vga, reg, (uint8_t)val);
+            }
+        }
         return;
     }
 
@@ -440,6 +494,7 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     nv11_window_init(s);
     nv11_prome_init(s);
     nv11_pgraph_init(s);
+    nv11_ptimer_init(s);
     nv11_fifo_init(s);
     nv11_2d_init(s);
 

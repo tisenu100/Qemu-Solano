@@ -132,18 +132,19 @@ static void nv11_fifo_dma_push(NV11State *s, uint32_t chan, uint32_t put)
 {
     uint32_t eip = nv11_get_eip();
     uint32_t ring_base = s->vga.vram_size - 128 * 1024;
-    uint32_t get = s->fifo[chan].dma_get;
+    uint32_t get  = s->fifo[chan].dma_get & NV11_DMA_RING_MASK;
+    uint32_t putm = put & NV11_DMA_RING_MASK;
     uint32_t i;
 
     trace_nv11_fifo_dma_push(eip, chan, put, ring_base, get);
 
-    /* The ring holds ring_size/4 dwords; each iteration consumes exactly
-     * one dword, so this bounds the walk. */
-    for (i = 0; get != put && i < NV11_DMA_RING_SIZE / 4; i++) {
-        uint32_t hdr = nv11_vram_read_dword(s, ring_base + (get & NV11_DMA_RING_MASK));
+    /* DMA_GET/DMA_PUT are byte offsets relative to the ring base and wrap
+     * modulo the ring size. */
+    for (i = 0; get != putm && i < NV11_DMA_RING_SIZE / 4; i++) {
+        uint32_t hdr = nv11_vram_read_dword(s, ring_base + get);
         uint32_t count, sub, reg, j;
 
-        get += 4;
+        get = (get + 4) & NV11_DMA_RING_MASK;
 
         if (hdr == 0) {
             continue;                   /* NOP */
@@ -158,9 +159,8 @@ static void nv11_fifo_dma_push(NV11State *s, uint32_t chan, uint32_t put)
         reg   = hdr & 0x1FFF;           /* Method byte offset */
 
         for (j = 0; j < count; j++) {
-            uint32_t val = nv11_vram_read_dword(s,
-                ring_base + (get & NV11_DMA_RING_MASK));
-            get += 4;
+            uint32_t val = nv11_vram_read_dword(s, ring_base + get);
+            get = (get + 4) & NV11_DMA_RING_MASK;
             if (reg == 0 && (val & 0x80000000)) {
                 trace_nv11_fifo_dma_bind(eip, sub, val);
                 s->ch_class[sub] = nv11_fifo_ramin_class(s, val & 0x7F);

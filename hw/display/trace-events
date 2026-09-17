@@ -286,6 +286,11 @@ nv11_pgraph_write(uint32_t eip, uint32_t reg, unsigned size, uint32_t val) "NV11
 nv11_pgraph_status(uint32_t eip, int busy) "NV11: [PGRAPH] [eip=0x%"PRIx32"] status busy=%d"
 nv11_pgraph_idle(uint32_t eip) "NV11: [PGRAPH] [eip=0x%"PRIx32"] BUSY cleared (engine idle)"
 
+# nv11_ptimer.c
+nv11_ptimer_init(void) "NV11: [PTIMER] init"
+nv11_ptimer_read(uint32_t eip, uint32_t reg, unsigned size) "NV11: [PTIMER] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
+nv11_ptimer_write(uint32_t eip, uint32_t reg, unsigned size, uint32_t val) "NV11: [PTIMER] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+
 # nv11_2d.c
 nv11_2d_reset(void) "NV11: [2D] reset"
 nv11_2d_method(uint32_t eip, uint32_t chan, uint32_t reg, uint32_t val) "NV11: [2D] [eip=0x%"PRIx32"] subch%u method 0x%"PRIx32" <- 0x%"PRIx32

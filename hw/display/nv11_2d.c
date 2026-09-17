@@ -202,8 +202,8 @@ static void nv11_2d_fill_rect(NV11State *s, int32_t x, int32_t y,
                 pat = 0;
             }
             r = nv11_2d_rop3(s->d2d_rop3, dst, src, pat);
-            if (use_pat && sf.bpp >= 16 && ((r >> 24) & 0xFF) == 0) {
-                continue;   /* transparent stipple */
+            if (use_pat && sf.bpp == 32 && ((r >> 24) & 0xFF) == 0) {
+                continue;   /* transparent stipple (32bpp alpha) */
             }
             nv11_2d_store(p, sf.bpp, r);
         }
@@ -329,9 +329,9 @@ static void nv11_2d_expand_begin(NV11State *s, bool opaque,
     s->d2d_exp_opaque = opaque;
     s->d2d_exp_x = point & 0xFFFF;
     s->d2d_exp_y = point >> 16;
-    s->d2d_exp_h = wh & 0xFFFF;
-    s->d2d_exp_bw = wh >> 16;
-    s->d2d_exp_bw32 = (int)((wh >> 16) + 31) >> 5;
+    s->d2d_exp_h = wh >> 16;
+    s->d2d_exp_bw = wh & 0xFFFF;
+    s->d2d_exp_bw32 = (int)((s->d2d_exp_bw + 31) >> 5);
     s->d2d_exp_row = 0;
     s->d2d_exp_dw = 0;
 
@@ -344,7 +344,7 @@ static void nv11_2d_expand_begin(NV11State *s, bool opaque,
     }
 
     trace_nv11_2d_expand(eip, s->d2d_exp_x, s->d2d_exp_y,
-                         (wh >> 16), s->d2d_exp_h, opaque);
+                         s->d2d_exp_bw, s->d2d_exp_h, opaque);
 }
 
 static void nv11_2d_expand_row(NV11State *s)

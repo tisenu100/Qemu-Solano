@@ -53,6 +53,7 @@
 #define NV11_PGRAPH_END          0x401000
 #define NV11_PFIFO_OFF           0x002000
 #define NV11_PTMR_OFF            0x009000
+#define NV11_PTMR_END            0x00A000
 #define NV11_PRAMIN_OFF          0x700000
 #define NV11_FIFO_OFF            0x800000
 #define NV11_FIFO_END            0x810000
@@ -70,6 +71,8 @@
 #define NV11_PRAMDAC1_END        0x684000
 #define NV11_PRMDIO_OFF          0x6813C0
 #define NV11_PRMDIO_END          0x6813D0
+#define NV11_PVIO_OFF            0x0C0000
+#define NV11_PVIO_END            0x0C1000
 
 /* PBUS */
 #define NV11_PBUS_DEBUG_1        0x000084
@@ -111,12 +114,26 @@
 /* PEXTDEV registers (within 0x1000 block) */
 #define NV11_PEXTDEV_BOOT_0      0x000000
 
+/* PTIMER registers (within 0x1000 block, BAR0 0x9000) */
+#define NV11_PTIMER_INTR         0x000100
+#define NV11_PTIMER_INTR_EN      0x000140
+#define NV11_PTIMER_NUMERATOR    0x000200
+#define NV11_PTIMER_DENOMINATOR  0x000210
+#define NV11_PTIMER_TIME_LOW     0x000400
+#define NV11_PTIMER_TIME_HIGH    0x000410
+#define NV11_PTIMER_ALARM        0x000420
+
 /* PGRAPH registers (within 0x1000 block, BAR0 0x400000) */
 #define NV11_PGRAPH_INTR         0x000100
 #define NV11_PGRAPH_INTR_EN      0x000140
 #define NV11_PGRAPH_STATUS       0x000700   /* bit0 = busy */
 #define NV11_PGRAPH_CTX_CTRL     0x000710
 #define NV11_PGRAPH_FIFO         0x000720   /* bit0 = fifo enable */
+
+/* PFIFO CACHE1 DMA context */
+#define NV11_PFIFO_CACHE1_DMA_FETCH          0x003224
+#define NV11_PFIFO_CACHE1_DMA_CTL            0x003230
+#define NV11_PFIFO_DMA_CTL_VALID             0x80000000u
 
 /* FIFO window
  * NV11 has 8 subchannels of 0x2000 bytes each. Every channel:
@@ -259,6 +276,15 @@ typedef struct NV11State {
     /* PBUS / PEXTDEV */
     uint32_t pextdev_boot_0;     /* 0x101000 */
 
+    /* PTIMER (BAR0 0x9000) */
+    uint32_t ptimer_intr;        /* 0x9100, bit0 = ALARM pending */
+    uint32_t ptimer_intr_en;     /* 0x9140 */
+    uint32_t ptimer_num;         /* 0x9200 numerator */
+    uint32_t ptimer_denom;       /* 0x9210 denominator */
+    uint32_t ptimer_alarm;       /* 0x9420 */
+    uint64_t ptimer_base;        /* counter value at ptimer_base_ns */
+    int64_t  ptimer_base_ns;     /* QEMU_CLOCK_VIRTUAL ns of base */
+
     /* PROM shadow gate */
     bool     rom_shadow_en;      /* 0x101850 bit0 */
     uint8_t  *prom_data;         /* VBIOS bytes */
@@ -347,6 +373,11 @@ void nv11_pgraph_init(NV11State *s);
 void nv11_pgraph_reset(NV11State *s);
 uint64_t nv11_pgraph_read(NV11State *s, hwaddr offset, unsigned size);
 void nv11_pgraph_write(NV11State *s, hwaddr offset, uint64_t val,
+                       unsigned size);
+void nv11_ptimer_init(NV11State *s);
+void nv11_ptimer_reset(NV11State *s);
+uint64_t nv11_ptimer_read(NV11State *s, hwaddr offset, unsigned size);
+void nv11_ptimer_write(NV11State *s, hwaddr offset, uint64_t val,
                        unsigned size);
 void nv11_2d_init(NV11State *s);
 void nv11_2d_reset(NV11State *s);
