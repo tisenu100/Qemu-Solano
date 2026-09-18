@@ -59,7 +59,7 @@
 #include "monitor/monitor.h"
 
 #define VNC_REFRESH_INTERVAL_BASE GUI_REFRESH_INTERVAL_DEFAULT
-#define VNC_REFRESH_INTERVAL_INC  50
+#define VNC_REFRESH_INTERVAL_INC  75
 #define VNC_REFRESH_INTERVAL_MAX  GUI_REFRESH_INTERVAL_IDLE
 static const struct timeval VNC_REFRESH_STATS = { 0, 500000 };
 static const struct timeval VNC_REFRESH_LOSSY = { 2, 0 };

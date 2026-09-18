@@ -1,5 +1,5 @@
 /*
- * QEMU Sound Blaster 16 emulation
+ * QEMU Sound Blaster ViBRA 16 emulation
  *
  * Copyright (c) 2003-2005 Vassili Karpov (malc)
  *
@@ -24,6 +24,11 @@
  * THE SOFTWARE.
  */
 
+/* TODO: implement ISA PnP so it's like a real vibra card, for now it works like a regular sb16.. but with cqm... 
+ * also this is seriously disgusting i just copied sb16.c lazily and renamed everything with ctrl-h... i need to do it properly at some point
+ * but for now maybe it's ok.. also maybe good idea to install sb vibra drivers and trace what it does and put it here..
+*/
+
 #include "qemu/osdep.h"
 #include "hw/audio/model.h"
 #include "qemu/audio.h"
@@ -42,23 +47,23 @@
 #include "qapi/error.h"
 #include "qemu/fifo8.h"
 
-#include "opl3.h"
+#include "cqm.h"
 
 #define DEBUG 0
-/* #define DEBUG_SB16_MOST */
+/* #define DEBUG_vibra_MOST */
 
 #define ldebug(fmt, ...) do { \
         if (DEBUG) { \
-            error_report("sb16: " fmt, ##__VA_ARGS__); \
+            error_report("vibra: " fmt, ##__VA_ARGS__); \
         } \
     } while (0)
 
 static const char e3[] = "COPYRIGHT (C) CREATIVE TECHNOLOGY LTD, 1992.";
 
-#define TYPE_SB16 "sb16"
-OBJECT_DECLARE_SIMPLE_TYPE(SB16State, SB16)
+#define TYPE_vibra "sb16vibra"
+OBJECT_DECLARE_SIMPLE_TYPE(vibraState, vibra)
 
-struct SB16State {
+struct vibraState {
     ISADevice parent_obj;
 
     AudioBackend *audio_be;
@@ -119,14 +124,14 @@ struct SB16State {
 
     int32_t adpcm_valpred;
     int32_t adpcm_index;
-
-    opl3_chip ymf262;
-    uint16_t ymf262_reg;
-    int16_t *ymf262_mix;
-    unsigned int ymf262_samps;
-    uint8_t ymf262_status;
-    SWVoiceOut *voice_opl;
-    PortioList opl_portio_list;
+    
+    cqm_t cqm;
+    uint16_t cqm_reg;
+    int16_t *cqm_mix;
+    unsigned int cqm_samps;
+    uint8_t cqm_status;
+    SWVoiceOut *voice_cqm;
+    PortioList cqm_portio_list;
     PortioList hack_portio_list;
 
     /* evil */
@@ -150,14 +155,14 @@ struct SB16State {
 #define SAMPLE_RATE_MAX 49716
 
 /* Get your FREE tables! */
-static const uint8_t sb16_log_vol[32] = {
+static const uint8_t vibra_log_vol[32] = {
     0,   2,   5,   8,   12,  16,  20,  25,
     31,  38,  46,  54,  63,  73,  84,  96,
     108, 122, 136, 152, 168, 185, 203, 222,
     242, 255, 255, 255, 255, 255, 255, 255
 };
 
-static void sb16_update_voice_volume(SB16State *s)
+static void vibra_update_voice_volume(vibraState *s)
 {
     if (!s->voice) return;
 
@@ -170,15 +175,15 @@ static void sb16_update_voice_volume(SB16State *s)
     vol.mute = 0;
     vol.channels = 2;
 
-    vol.vol[0] = (sb16_log_vol[ml_idx] * sb16_log_vol[vl_idx] * 192) / 65025;
-    vol.vol[1] = (sb16_log_vol[mr_idx] * sb16_log_vol[vr_idx] * 192) / 65025;
+    vol.vol[0] = (vibra_log_vol[ml_idx] * vibra_log_vol[vl_idx] * 192) / 65025;
+    vol.vol[1] = (vibra_log_vol[mr_idx] * vibra_log_vol[vr_idx] * 192) / 65025;
 
     audio_be_set_volume_out(s->audio_be, s->voice, &vol);
 }
 
-static void sb16_update_opl_volume(SB16State *s)
+static void vibra_update_cqm_volume(vibraState *s)
 {
-    if (!s->voice_opl) return;
+    if (!s->voice_cqm) return;
 
     int ml_idx = (s->mixer_regs[0x30] >> 3) & 0x1f;
     int mr_idx = (s->mixer_regs[0x31] >> 3) & 0x1f;
@@ -189,57 +194,57 @@ static void sb16_update_opl_volume(SB16State *s)
     vol.mute = 0;
     vol.channels = 2;
 
-    vol.vol[0] = (sb16_log_vol[ml_idx] * sb16_log_vol[vl_idx] * 192) / 65025;
-    vol.vol[1] = (sb16_log_vol[mr_idx] * sb16_log_vol[vr_idx] * 192) / 65025;
+    vol.vol[0] = (vibra_log_vol[ml_idx] * vibra_log_vol[vl_idx] * 192) / 65025;
+    vol.vol[1] = (vibra_log_vol[mr_idx] * vibra_log_vol[vr_idx] * 192) / 65025;
 
-    audio_be_set_volume_out(s->audio_be, s->voice_opl, &vol);
+    audio_be_set_volume_out(s->audio_be, s->voice_cqm, &vol);
 }
 
-static void sb16_opl_callback(void *opaque, int free)
+static void vibra_cqm_callback(void *opaque, int free)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     unsigned int samples;
     
-    if (!s->voice_opl) {
+    if (!s->voice_cqm) {
         return;
     }
 
-    samples = MIN((unsigned int)(free / 4), s->ymf262_samps);
+    samples = MIN((unsigned int)(free / 4), s->cqm_samps);
 
-    OPL3_GenerateStream(&s->ymf262, s->ymf262_mix, samples);
-    audio_be_write(s->audio_be, s->voice_opl, s->ymf262_mix, samples * 4);    
+    CQM_GenerateStream(&s->cqm, s->cqm_mix, samples);
+    audio_be_write(s->audio_be, s->voice_cqm, s->cqm_mix, samples * 4);    
 }
 
-static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
+static void vibra_cqm_write(void *opaque, uint32_t nport, uint32_t val)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     uint32_t a = nport & 3;
     uint16_t reg;
 
-    audio_be_set_active_out(s->audio_be, s->voice_opl, 1);
-    sb16_update_opl_volume(s);
+    audio_be_set_active_out(s->audio_be, s->voice_cqm, 1);
+    vibra_update_cqm_volume(s);
 
     switch (a) {
     case 0:  /* bank-0 address latch */
-        s->ymf262_reg = val & 0xff;
+        s->cqm_reg = val & 0xff;
         break;
     case 2:  /* bank-1 address latch */
-        s->ymf262_reg = (val & 0xff) | 0x100;
+        s->cqm_reg = (val & 0xff) | 0x100;
         break;
     case 1:  /* bank-0 data commit */
-    case 3:  /* bank-1 data commit; bank bit already in ymf262_regs */
+    case 3:  /* bank-1 data commit; bank bit already in cqm_regs */
         /*
-         * Bank-0 reg 0x04 is OPL Timer Control. Nuked-OPL3 ignores it,
+         * Bank-0 reg 0x04 is CQM Timer Control. Nuked-CQM ignores it,
          * so we synthesize the status byte here. Bit 7 = IRQ reset
          * (clears status); else status reflects start+mask bits per
          * AdLib/OPL3 semantics:
          *   ctrl bit 0: T1 start    ctrl bit 6: T1 mask
          *   ctrl bit 1: T2 start    ctrl bit 5: T2 mask
          */
-        reg = s->ymf262_reg;
+        reg = s->cqm_reg;
         if (reg == 0x04) {
             if (val & 0x80) {
-                s->ymf262_status = 0;
+                s->cqm_status = 0;
             } else {
                 uint8_t status = 0;
                 if ((val & 0x01) && !(val & 0x40)) {
@@ -251,34 +256,34 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
                 if (status) {
                     status |= 0x80;
                 }
-                s->ymf262_status = status;
+                s->cqm_status = status;
             }
         }
-        OPL3_WriteRegBuffered(&s->ymf262, reg,
+        CQM_WriteRegBuffered(&s->cqm, reg,
                               val & 0xff);
         break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
-                      "ymf262: invalid port offset %d\n", a);
+                      "cqm: invalid port offset %d\n", a);
     }
 }
 
-static uint32_t sb16_opl_read(void *opaque, uint32_t nport)
+static uint32_t vibra_cqm_read(void *opaque, uint32_t nport)
 {
-    SB16State *s = opaque;
-    return s->ymf262_status;
+    vibraState *s = opaque;
+    return s->cqm_status;
 }
 
 static int mpu_can_receive(void *opaque)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     return fifo8_num_free(&s->mpu_fifo);
 }
 
 
 static void mpu_receive(void *opaque, const uint8_t *buf, int size)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
 
     if (!s->mpu_uart_mode) {
         return;
@@ -294,7 +299,7 @@ static void mpu_receive(void *opaque, const uint8_t *buf, int size)
 
 static void mpu_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     uint8_t byte = val & 0xff;
 
     if (addr == 1) {
@@ -321,7 +326,7 @@ static void mpu_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
 
 static uint64_t mpu_read(void *opaque, hwaddr addr, unsigned size)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
 
     if (addr == 1) { 
         uint8_t status = 0x3F;
@@ -383,7 +388,7 @@ static int irq_of_magic (int magic)
     }
 }
 
-static void hold_DREQ(SB16State *s, int nchan)
+static void hold_DREQ(vibraState *s, int nchan)
 {
     IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
     IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
@@ -391,7 +396,7 @@ static void hold_DREQ(SB16State *s, int nchan)
     k->hold_DREQ(isa_dma, nchan);
 }
 
-static void release_DREQ(SB16State *s, int nchan)
+static void release_DREQ(vibraState *s, int nchan)
 {
     IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
     IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
@@ -400,7 +405,7 @@ static void release_DREQ(SB16State *s, int nchan)
 }
 
 #if 0
-static void log_dsp (SB16State *dsp)
+static void log_dsp (vibraState *dsp)
 {
     ldebug("%s:%s:%d:%s:dmasize=%d:freq=%d:const=%d:speaker=%d",
             dsp->fmt_stereo ? "Stereo" : "Mono",
@@ -414,13 +419,13 @@ static void log_dsp (SB16State *dsp)
 }
 #endif
 
-static void speaker (SB16State *s, int on)
+static void speaker (vibraState *s, int on)
 {
     s->speaker = on;
     /* audio_be_enable (s->voice, on); */
 }
 
-static void control (SB16State *s, int hold)
+static void control (vibraState *s, int hold)
 {
     int nchan = s->use_hdma ? s->hdma : s->dma;
     s->dma_running = hold;
@@ -452,7 +457,7 @@ static void control (SB16State *s, int hold)
 
 static void aux_timer (void *opaque)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     s->can_write = 1;
     qemu_irq_raise (s->pic);
 }
@@ -460,7 +465,7 @@ static void aux_timer (void *opaque)
 #define DMA8_AUTO 1
 #define DMA8_HIGH 2
 
-static void continue_dma8 (SB16State *s)
+static void continue_dma8 (vibraState *s)
 {
     if (s->freq > 0) {
         struct audsettings as;
@@ -477,7 +482,7 @@ static void continue_dma8 (SB16State *s)
             s->voice_in = audio_be_open_in(
                 s->audio_be,
                 s->voice_in,
-                "sb16",
+                "vibra",
                 s,
                 SB_adc_callback,
                 &as
@@ -486,14 +491,14 @@ static void continue_dma8 (SB16State *s)
             s->voice = audio_be_open_out(
                 s->audio_be,
                 s->voice,
-                "sb16",
+                "vibra",
                 s,
                 SB_audio_callback,
                 &as
                 );
         }
-    sb16_update_opl_volume(s);
-	sb16_update_voice_volume(s);
+    vibra_update_cqm_volume(s);
+	vibra_update_voice_volume(s);
     }
 
     control (s, 1);
@@ -516,7 +521,7 @@ static inline int restrict_sampling_rate(int freq)
     }
 }
 
-static void dma_cmd8 (SB16State *s, int mask, int dma_len)
+static void dma_cmd8 (vibraState *s, int mask, int dma_len)
 {
     s->fmt = AUDIO_FORMAT_U8;
     s->use_hdma = 0;
@@ -568,7 +573,7 @@ static void dma_cmd8 (SB16State *s, int mask, int dma_len)
     speaker (s, 1);
 }
 
-static void adc_cmd8 (SB16State *s, int mask, int dma_len)
+static void adc_cmd8 (vibraState *s, int mask, int dma_len)
 {
     s->fmt = AUDIO_FORMAT_U8;
     s->use_hdma = 0;
@@ -617,16 +622,16 @@ static void adc_cmd8 (SB16State *s, int mask, int dma_len)
         as.big_endian = false;
 
         s->voice_in = audio_be_open_in(
-            s->audio_be, s->voice_in, "sb16", s, SB_adc_callback, &as);
+            s->audio_be, s->voice_in, "vibra", s, SB_adc_callback, &as);
     }
-    sb16_update_voice_volume(s);
+    vibra_update_voice_volume(s);
 
     s->recording = 1;
     control(s, 1);
     speaker(s, 1);
 }
 
-static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
+static void dma_cmd (vibraState *s, uint8_t cmd, uint8_t d0, int dma_len)
 {
     s->use_hdma = cmd < 0xc0;
     s->fifo = (cmd >> 1) & 1;
@@ -661,7 +666,7 @@ static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
         /* It is clear that for DOOM and auto-init this value
            shouldn't take stereo into account, while Miles Sound Systems
            setsound.exe with single transfer mode wouldn't work without it
-           wonders of SB16 yet again */
+           wonders of vibra yet again */
         s->block_size <<= s->fmt_stereo;
     }
 
@@ -710,19 +715,19 @@ static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
         s->voice = audio_be_open_out(
             s->audio_be,
             s->voice,
-            "sb16",
+            "vibra",
             s,
             SB_audio_callback,
             &as
             );
-	sb16_update_voice_volume(s);
+	vibra_update_voice_volume(s);
     }
 
     control (s, 1);
     speaker (s, 1);
 }
 
-static inline void dsp_out_data (SB16State *s, uint8_t val)
+static inline void dsp_out_data (vibraState *s, uint8_t val)
 {
     ldebug("outdata 0x%x", val);
     if ((size_t) s->out_data_len < sizeof (s->out_data)) {
@@ -730,18 +735,18 @@ static inline void dsp_out_data (SB16State *s, uint8_t val)
     }
 }
 
-static inline uint8_t dsp_get_data (SB16State *s)
+static inline uint8_t dsp_get_data (vibraState *s)
 {
     if (s->in_index) {
         return s->in2_data[--s->in_index];
     }
     else {
-        warn_report("sb16: buffer underflow");
+        warn_report("vibra: buffer underflow");
         return 0;
     }
 }
 
-static void command (SB16State *s, uint8_t cmd)
+static void command (vibraState *s, uint8_t cmd)
 {
     ldebug("command 0x%x", cmd);
 
@@ -991,14 +996,14 @@ static void command (SB16State *s, uint8_t cmd)
 
 }
 
-static uint16_t dsp_get_lohi (SB16State *s)
+static uint16_t dsp_get_lohi (vibraState *s)
 {
     uint8_t hi = dsp_get_data (s);
     uint8_t lo = dsp_get_data (s);
     return (hi << 8) | lo;
 }
 
-static uint16_t dsp_get_hilo (SB16State *s)
+static uint16_t dsp_get_hilo (vibraState *s)
 {
     uint8_t lo = dsp_get_data (s);
     uint8_t hi = dsp_get_data (s);
@@ -1022,7 +1027,7 @@ static const int step_table[89] = {
     12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
 };
 
-static int16_t decode_adpcm_4bit(uint8_t code, SB16State *s) {
+static int16_t decode_adpcm_4bit(uint8_t code, vibraState *s) {
     int step = step_table[s->adpcm_index];
     int diff = step >> 3;
     if (code & 4) diff += step;
@@ -1044,7 +1049,7 @@ static int16_t decode_adpcm_4bit(uint8_t code, SB16State *s) {
 
 /* THE END OF ADPCM PAIN */
 
-static void complete (SB16State *s)
+static void complete (vibraState *s)
 {
     int d0, d1, d2;
     ldebug("complete command 0x%x, in_index %d, needed_bytes %d",
@@ -1091,7 +1096,7 @@ static void complete (SB16State *s)
                 as.big_endian = false;
 
                 s->voice_in = audio_be_open_in(
-                    s->audio_be, s->voice_in, "sb16", s, SB_adc_callback, &as);
+                    s->audio_be, s->voice_in, "vibra", s, SB_adc_callback, &as);
             }
 
             s->recording = 1;
@@ -1172,10 +1177,10 @@ static void complete (SB16State *s)
         case 0x42:
             /*
              * 0x41 is documented as setting the output sample rate,
-             * and 0x42 the input sample rate, but in fact SB16 hardware
+             * and 0x42 the input sample rate, but in fact vibra hardware
              * seems to have only a single sample rate under the hood,
              * and FT2 sets output freq with this (go figure).  Compare:
-             * http://homepages.cae.wisc.edu/~brodskye/sb16doc/sb16doc.html#SamplingRate
+             * http://homepages.cae.wisc.edu/~brodskye/vibradoc/vibradoc.html#SamplingRate
              */
             s->freq = restrict_sampling_rate(dsp_get_hilo(s));
 	    s->highspeed = 1;
@@ -1199,7 +1204,7 @@ static void complete (SB16State *s)
         case 0x76:
         case 0x77:
             d0 = dsp_get_lohi(s);
-            qemu_log_mask(LOG_UNIMP, "sb16: ADPCM command 0x%x len %d not implemented\n", 
+            qemu_log_mask(LOG_UNIMP, "vibra: ADPCM command 0x%x len %d not implemented\n", 
                           s->cmd, d0);
             break;
 
@@ -1283,7 +1288,7 @@ static void complete (SB16State *s)
 	return;
 }
 
-static void legacy_reset (SB16State *s)
+static void legacy_reset (vibraState *s)
 {
     struct audsettings as;
 
@@ -1305,7 +1310,7 @@ static void legacy_reset (SB16State *s)
     s->voice = audio_be_open_out(
         s->audio_be,
         s->voice,
-        "sb16",
+        "vibra",
         s,
         SB_audio_callback,
         &as
@@ -1314,7 +1319,7 @@ static void legacy_reset (SB16State *s)
     s->voice_in = audio_be_open_in(
         s->audio_be,
         s->voice_in,
-        "sb16",
+        "vibra",
         s,
         SB_adc_callback,
         &as
@@ -1324,7 +1329,7 @@ static void legacy_reset (SB16State *s)
     /* audio_be_set_active_out (s->audio_be, s->voice, 1); */
 }
 
-static void reset (SB16State *s)
+static void reset (vibraState *s)
 {
     qemu_irq_lower (s->pic);
     if (s->dma_auto) {
@@ -1361,7 +1366,7 @@ static void reset (SB16State *s)
 
 static void dsp_write(void *opaque, uint32_t nport, uint32_t val)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     int iport;
 
     iport = nport - s->port;
@@ -1416,7 +1421,7 @@ static void dsp_write(void *opaque, uint32_t nport, uint32_t val)
         }
         else {
             if (s->in_index == sizeof (s->in2_data)) {
-                warn_report("sb16: in data overrun");
+                warn_report("vibra: in data overrun");
             }
             else {
                 s->in2_data[s->in_index++] = val;
@@ -1439,7 +1444,7 @@ static void dsp_write(void *opaque, uint32_t nport, uint32_t val)
 
 static uint32_t dsp_read(void *opaque, uint32_t nport)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     int iport, retval, ack = 0;
 
     iport = nport - s->port;
@@ -1456,7 +1461,7 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         }
         else {
             if (s->cmd != -1) {
-                warn_report("sb16: empty output buffer for command 0x%x",
+                warn_report("vibra: empty output buffer for command 0x%x",
                        s->cmd);
             }
             retval = s->last_read_byte;
@@ -1469,7 +1474,7 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         break;
 
     case 0x0d:                  /* timer interrupt clear */
-        /* warn_report("sb16: timer interrupt clear"); */
+        /* warn_report("vibra: timer interrupt clear"); */
         retval = 0;
         break;
 
@@ -1502,11 +1507,11 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
     return retval;
 
  error:
-    warn_report("sb16: dsp_read 0x%x error", nport);
+    warn_report("vibra: dsp_read 0x%x error", nport);
     return 0xff;
 }
 
-static void reset_mixer (SB16State *s)
+static void reset_mixer (vibraState *s)
 {
     int i;
 
@@ -1538,14 +1543,14 @@ static void reset_mixer (SB16State *s)
 
 static void mixer_write_indexb(void *opaque, uint32_t nport, uint32_t val)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     (void) nport;
     s->mixer_nreg = val;
 }
 
 static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
 
     (void) nport;
     ldebug("mixer_write [0x%x] <- 0x%x", s->mixer_nreg, val);
@@ -1626,15 +1631,15 @@ static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
         s->mixer_regs[s->mixer_nreg] = val;
         break;
     }
-    sb16_update_voice_volume(s);
+    vibra_update_voice_volume(s);
 }
 
 static uint32_t mixer_read(void *opaque, uint32_t nport)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
 
     (void) nport;
-#ifndef DEBUG_SB16_MOST
+#ifndef DEBUG_vibra_MOST
     if (s->mixer_nreg != 0x82) {
         ldebug("mixer_read[0x%x] -> 0x%x",
                 s->mixer_nreg, s->mixer_regs[s->mixer_nreg]);
@@ -1646,7 +1651,7 @@ static uint32_t mixer_read(void *opaque, uint32_t nport)
     return s->mixer_regs[s->mixer_nreg];
 }
 
-static int write_audio (SB16State *s, int nchan, int dma_pos,
+static int write_audio (vibraState *s, int nchan, int dma_pos,
                         int dma_len, int len)
 {
     IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
@@ -1699,7 +1704,7 @@ static int write_audio (SB16State *s, int nchan, int dma_pos,
 
 static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
 
     if (s->recording) {
         IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
@@ -1847,7 +1852,7 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 
 static void SB_audio_callback (void *opaque, int free)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     int nchan = s->use_hdma ? s->hdma : s->dma;
     s->audio_free = free;
     /* run the DMA engine to call SB_read_DMA immediately */
@@ -1856,15 +1861,15 @@ static void SB_audio_callback (void *opaque, int free)
 
 static void SB_adc_callback(void *opaque, int avail)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
     int nchan = s->use_hdma ? s->hdma : s->dma;
     s->audio_avail = avail;
     hold_DREQ(s, nchan);
 }
 
-static int sb16_post_load (void *opaque, int version_id)
+static int vibra_post_load (void *opaque, int version_id)
 {
-    SB16State *s = opaque;
+    vibraState *s = opaque;
 
     if (s->voice) {
         audio_be_close_out(s->audio_be, s->voice);
@@ -1892,7 +1897,7 @@ static int sb16_post_load (void *opaque, int version_id)
                 s->voice_in = audio_be_open_in(
                     s->audio_be,
                     s->voice_in,
-                    "sb16",
+                    "vibra",
                     s,
                     SB_adc_callback,
                     &as
@@ -1901,7 +1906,7 @@ static int sb16_post_load (void *opaque, int version_id)
                 s->voice = audio_be_open_out(
                     s->audio_be,
                     s->voice,
-                    "sb16",
+                    "vibra",
                     s,
                     SB_audio_callback,
                     &as
@@ -1915,67 +1920,67 @@ static int sb16_post_load (void *opaque, int version_id)
     return 0;
 }
 
-static const VMStateDescription vmstate_sb16 = {
-    .name = "sb16",
+static const VMStateDescription vmstate_vibra = {
+    .name = "vibra",
     .version_id = 1,
     .minimum_version_id = 1,
-    .post_load = sb16_post_load,
+    .post_load = vibra_post_load,
     .fields = (const VMStateField[]) {
         VMSTATE_UNUSED(  4 /* irq */
                        + 4 /* dma */
                        + 4 /* hdma */
                        + 4 /* port */
                        + 4 /* ver */),
-        VMSTATE_INT32 (in_index, SB16State),
-        VMSTATE_INT32 (out_data_len, SB16State),
-        VMSTATE_INT32 (fmt_stereo, SB16State),
-        VMSTATE_INT32 (fmt_signed, SB16State),
-        VMSTATE_INT32 (fmt_bits, SB16State),
-        VMSTATE_UINT32 (fmt, SB16State),
-        VMSTATE_INT32 (dma_auto, SB16State),
-        VMSTATE_INT32 (block_size, SB16State),
-        VMSTATE_INT32 (fifo, SB16State),
-        VMSTATE_INT32 (freq, SB16State),
-        VMSTATE_INT32 (time_const, SB16State),
-        VMSTATE_INT32 (speaker, SB16State),
-        VMSTATE_INT32 (needed_bytes, SB16State),
-        VMSTATE_INT32 (cmd, SB16State),
-        VMSTATE_INT32 (use_hdma, SB16State),
-        VMSTATE_INT32 (highspeed, SB16State),
-        VMSTATE_INT32 (can_write, SB16State),
-        VMSTATE_INT32 (v2x6, SB16State),
+        VMSTATE_INT32 (in_index, vibraState),
+        VMSTATE_INT32 (out_data_len, vibraState),
+        VMSTATE_INT32 (fmt_stereo, vibraState),
+        VMSTATE_INT32 (fmt_signed, vibraState),
+        VMSTATE_INT32 (fmt_bits, vibraState),
+        VMSTATE_UINT32 (fmt, vibraState),
+        VMSTATE_INT32 (dma_auto, vibraState),
+        VMSTATE_INT32 (block_size, vibraState),
+        VMSTATE_INT32 (fifo, vibraState),
+        VMSTATE_INT32 (freq, vibraState),
+        VMSTATE_INT32 (time_const, vibraState),
+        VMSTATE_INT32 (speaker, vibraState),
+        VMSTATE_INT32 (needed_bytes, vibraState),
+        VMSTATE_INT32 (cmd, vibraState),
+        VMSTATE_INT32 (use_hdma, vibraState),
+        VMSTATE_INT32 (highspeed, vibraState),
+        VMSTATE_INT32 (can_write, vibraState),
+        VMSTATE_INT32 (v2x6, vibraState),
 
-        VMSTATE_UINT8 (csp_param, SB16State),
-        VMSTATE_UINT8 (csp_value, SB16State),
-        VMSTATE_UINT8 (csp_mode, SB16State),
-        VMSTATE_UINT8 (csp_param, SB16State),
-        VMSTATE_BUFFER (csp_regs, SB16State),
-        VMSTATE_UINT8 (csp_index, SB16State),
-        VMSTATE_BUFFER (csp_reg83, SB16State),
-        VMSTATE_INT32 (csp_reg83r, SB16State),
-        VMSTATE_INT32 (csp_reg83w, SB16State),
+        VMSTATE_UINT8 (csp_param, vibraState),
+        VMSTATE_UINT8 (csp_value, vibraState),
+        VMSTATE_UINT8 (csp_mode, vibraState),
+        VMSTATE_UINT8 (csp_param, vibraState),
+        VMSTATE_BUFFER (csp_regs, vibraState),
+        VMSTATE_UINT8 (csp_index, vibraState),
+        VMSTATE_BUFFER (csp_reg83, vibraState),
+        VMSTATE_INT32 (csp_reg83r, vibraState),
+        VMSTATE_INT32 (csp_reg83w, vibraState),
 
-        VMSTATE_BUFFER (in2_data, SB16State),
-        VMSTATE_BUFFER (out_data, SB16State),
-        VMSTATE_UINT8 (test_reg, SB16State),
-        VMSTATE_UINT8 (last_read_byte, SB16State),
+        VMSTATE_BUFFER (in2_data, vibraState),
+        VMSTATE_BUFFER (out_data, vibraState),
+        VMSTATE_UINT8 (test_reg, vibraState),
+        VMSTATE_UINT8 (last_read_byte, vibraState),
 
-        VMSTATE_INT32 (nzero, SB16State),
-        VMSTATE_INT32 (left_till_irq, SB16State),
-        VMSTATE_INT32 (dma_running, SB16State),
-        VMSTATE_INT32 (recording, SB16State),
-        VMSTATE_INT32 (audio_avail, SB16State),
-        VMSTATE_INT32 (bytes_per_second, SB16State),
-        VMSTATE_INT32 (align, SB16State),
+        VMSTATE_INT32 (nzero, vibraState),
+        VMSTATE_INT32 (left_till_irq, vibraState),
+        VMSTATE_INT32 (dma_running, vibraState),
+        VMSTATE_INT32 (recording, vibraState),
+        VMSTATE_INT32 (audio_avail, vibraState),
+        VMSTATE_INT32 (bytes_per_second, vibraState),
+        VMSTATE_INT32 (align, vibraState),
 
-        VMSTATE_INT32 (mixer_nreg, SB16State),
-        VMSTATE_BUFFER (mixer_regs, SB16State),
+        VMSTATE_INT32 (mixer_nreg, vibraState),
+        VMSTATE_BUFFER (mixer_regs, vibraState),
 
         VMSTATE_END_OF_LIST ()
     }
 };
 
-static MemoryRegionPortio sb16_ioport_list[] = {
+static MemoryRegionPortio vibra_ioport_list[] = {
     {  4, 1, 1, .write = mixer_write_indexb },
     {  5, 1, 1, .read = mixer_read, .write = mixer_write_datab },
     {  6, 1, 1, .read = dsp_read, .write = dsp_write },
@@ -1985,12 +1990,12 @@ static MemoryRegionPortio sb16_ioport_list[] = {
     PORTIO_END_OF_LIST (),
 };
 
-static MemoryRegionPortio opl_portio_list[] = {
-    { 0, 4, 1, .read = sb16_opl_read, .write = sb16_opl_write },
+static MemoryRegionPortio cqm_portio_list[] = {
+    { 0, 4, 1, .read = vibra_cqm_read, .write = vibra_cqm_write },
     PORTIO_END_OF_LIST (),
 };
 
-static const MemoryRegionOps sb16_mpu_ops = {
+static const MemoryRegionOps vibra_mpu_ops = {
     .read = mpu_read,
     .write = mpu_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
@@ -2000,14 +2005,14 @@ static const MemoryRegionOps sb16_mpu_ops = {
     },
 };
 
-static void sb16_initfn (Object *obj)
+static void vibra_initfn (Object *obj)
 {
-    SB16State *s = SB16 (obj);
+    vibraState *s = vibra (obj);
 
     s->cmd = -1;
 }
 
-static void ymf262_realize (SB16State *s, ISADevice *isadev)
+static void cqm_realize (vibraState *s, ISADevice *isadev)
 {
     struct audsettings as = {
         as.freq = 49716,
@@ -2016,28 +2021,28 @@ static void ymf262_realize (SB16State *s, ISADevice *isadev)
         as.big_endian = false,
     };
 
-    OPL3_Reset (&s->ymf262, 49716);
+    CQM_Reset (&s->cqm, 49716, 49716);
 
-    s->voice_opl = audio_be_open_out(s->audio_be, s->voice_opl, "sb16-opl", s, sb16_opl_callback, &as);
+    s->voice_cqm = audio_be_open_out(s->audio_be, s->voice_cqm, "vibra-cqm", s, vibra_cqm_callback, &as);
     
-    if (!s->voice_opl) {
-        warn_report("sb16: OPL3 audio voice open failed; FM disabled");
+    if (!s->voice_cqm) {
+        warn_report("vibra: CQM audio voice open failed; FM disabled");
         return;
     }
 
-    s->ymf262_samps = audio_be_get_buffer_size_out(s->audio_be, s->voice_opl) / 4;
-    s->ymf262_mix = g_malloc0(s->ymf262_samps * 4);
+    s->cqm_samps = audio_be_get_buffer_size_out(s->audio_be, s->voice_cqm) / 4;
+    s->cqm_mix = g_malloc0(s->cqm_samps * 4);
 
-    isa_register_portio_list(isadev, &s->opl_portio_list, s->port, opl_portio_list, s, "sb16-opl");
-	isa_register_portio_list(isadev, &s->hack_portio_list, 0x388, opl_portio_list, s, "sb16-opl");
+    isa_register_portio_list(isadev, &s->cqm_portio_list, s->port, cqm_portio_list, s, "vibra-cqm");
+	isa_register_portio_list(isadev, &s->hack_portio_list, 0x388, cqm_portio_list, s, "vibra-cqm");
 }
 
 
-static void sb16_realizefn (DeviceState *dev, Error **errp)
+static void vibra_realizefn (DeviceState *dev, Error **errp)
 {
     ISADevice *isadev = ISA_DEVICE (dev);
     ISABus *bus = isa_bus_from_device(isadev);
-    SB16State *s = SB16 (dev);
+    vibraState *s = vibra (dev);
     IsaDmaClass *k;
 
     if (!audio_be_check(&s->audio_be, errp)) {
@@ -2066,7 +2071,7 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     /* just in case */
     s->align = (s->fmt_bits == 16) ? 1 : 0;
 
-    ymf262_realize(s, isadev);
+    cqm_realize(s, isadev);
 
     reset_mixer (s);
     s->aux_ts = timer_new_ns(QEMU_CLOCK_VIRTUAL, aux_timer, s);
@@ -2074,14 +2079,14 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
         error_setg(errp, "warning: Could not create auxiliary timer");
     }
 
-    isa_register_portio_list(isadev, &s->portio_list, s->port, sb16_ioport_list, s, "sb16");
+    isa_register_portio_list(isadev, &s->portio_list, s->port, vibra_ioport_list, s, "vibra");
 
     fifo8_create(&s->mpu_fifo, 1024);
 
     qemu_chr_fe_set_handlers(&s->mpu_chr, mpu_can_receive, mpu_receive, NULL, NULL, s, NULL, true);
 
     if (s->mpu_chr.chr) {
-        memory_region_init_io(&s->mpu_io, OBJECT(s), &sb16_mpu_ops, s, "sb16-mpu401", 2);
+        memory_region_init_io(&s->mpu_io, OBJECT(s), &vibra_mpu_ops, s, "vibra-mpu401", 2);
         isa_register_ioport(isadev, &s->mpu_io, 0x330);
         qemu_chr_fe_set_handlers(&s->mpu_chr, NULL, NULL, NULL, NULL, s, NULL, true);
     }
@@ -2095,39 +2100,39 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     s->can_write = 1;
 }
 
-static const Property sb16_properties[] = {
-    DEFINE_AUDIO_PROPERTIES(SB16State, audio_be),
-    DEFINE_PROP_UINT32 ("version", SB16State, ver,  0x0405), /* 4.5 */
-    DEFINE_PROP_UINT32 ("iobase",  SB16State, port, 0x220),
-    DEFINE_PROP_UINT32 ("irq",     SB16State, irq,  5),
-    DEFINE_PROP_UINT32 ("dma",     SB16State, dma,  1),
-    DEFINE_PROP_UINT32 ("dma16",   SB16State, hdma, 5),
-    DEFINE_PROP_CHR    ("mpu401", SB16State, mpu_chr),
+static const Property vibra_properties[] = {
+    DEFINE_AUDIO_PROPERTIES(vibraState, audio_be),
+    DEFINE_PROP_UINT32 ("version", vibraState, ver,  0x0413), /* 4.13 */
+    DEFINE_PROP_UINT32 ("iobase",  vibraState, port, 0x220),
+    DEFINE_PROP_UINT32 ("irq",     vibraState, irq,  5),
+    DEFINE_PROP_UINT32 ("dma",     vibraState, dma,  1),
+    DEFINE_PROP_UINT32 ("dma16",   vibraState, hdma, 5),
+    DEFINE_PROP_CHR    ("mpu401", vibraState, mpu_chr),
 };
 
-static void sb16_class_initfn(ObjectClass *klass, const void *data)
+static void vibra_class_initfn(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS (klass);
 
-    dc->realize = sb16_realizefn;
+    dc->realize = vibra_realizefn;
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
-    dc->desc = "Creative Sound Blaster 16";
-    dc->vmsd = &vmstate_sb16;
-    device_class_set_props(dc, sb16_properties);
+    dc->desc = "Creative Sound Blaster ViBRA 16";
+    dc->vmsd = &vmstate_vibra;
+    device_class_set_props(dc, vibra_properties);
 }
 
-static const TypeInfo sb16_info = {
-    .name          = TYPE_SB16,
+static const TypeInfo vibra_info = {
+    .name          = TYPE_vibra,
     .parent        = TYPE_ISA_DEVICE,
-    .instance_size = sizeof (SB16State),
-    .instance_init = sb16_initfn,
-    .class_init    = sb16_class_initfn,
+    .instance_size = sizeof (vibraState),
+    .instance_init = vibra_initfn,
+    .class_init    = vibra_class_initfn,
 };
 
-static void sb16_register_types (void)
+static void vibra_register_types (void)
 {
-    type_register_static (&sb16_info);
-    audio_register_model("sb16", "Creative Sound Blaster 16", TYPE_SB16);
+    type_register_static (&vibra_info);
+    audio_register_model("sb16vibra", "Creative Sound Blaster ViBRA 16", TYPE_vibra);
 }
 
-type_init (sb16_register_types)
+type_init (vibra_register_types)
