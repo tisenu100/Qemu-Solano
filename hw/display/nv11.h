@@ -178,6 +178,7 @@
 #define NV11_CLASS_RECT_NV4      0x4A   /* NV4_GDI (fill rect) */
 #define NV11_CLASS_LINE_NV4      0x5C   /* NV4_LIN */
 #define NV11_CLASS_BLT           0x5F   /* NV4_BLIT */
+#define NV11_CLASS_BLT_NV15      0x9F   /* NV15_BLIT */
 #define NV11_CLASS_LIN           0x1C   /* NV1_LIN */
 #define NV11_CLASS_SURF          0x62   /* NV4_SURFACE */
 

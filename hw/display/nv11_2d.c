@@ -594,6 +594,7 @@ void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
         nv11_2d_surface_method(s, reg, val);
         break;
     case NV11_CLASS_BLT:
+    case NV11_CLASS_BLT_NV15:
         nv11_2d_blt_method(s, reg, val);
         break;
     case NV11_CLASS_GDI:

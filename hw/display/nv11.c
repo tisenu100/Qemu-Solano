@@ -23,12 +23,11 @@
  */
 
 /*
- * The GF2 MX400 variant used is the Abit Siluto. Normally it's AGP but we hack it as PCI.
- * The VBIOS is named MX4_0153.rom
  * 
  * Specs:
  * Nvidia NV11B chip (Stepping B2)
- * 64MB DDR
+ * 64MB DDR (SDRAM variants available)
+ * 
  */
 
 #include "qemu/osdep.h"
@@ -453,7 +452,7 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
 
     memset(s->bar0_flat, 0, sizeof(s->bar0_flat));
 
-    s->vga.vram_size_mb = NV11_BAR1_VRAM_SIZE_MB; /* Abit Siluto has 64MB of VRAM */
+    s->vga.vram_size_mb = NV11_BAR1_VRAM_SIZE_MB;
     if (!vga_common_init(&s->vga, OBJECT(dev), errp)) {
         return;
     }
