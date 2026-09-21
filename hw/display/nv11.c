@@ -496,6 +496,7 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     nv11_ptimer_init(s);
     nv11_fifo_init(s);
     nv11_2d_init(s);
+    nv11_i2c_init(s);
 
     pci_set_word(dev->config + PCI_COMMAND,
                  PCI_COMMAND_IO | PCI_COMMAND_MEMORY);
@@ -503,6 +504,10 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     pci_set_byte(dev->config + PCI_REVISION_ID, 0xB2);
     pci_set_byte(dev->config + PCI_INTERRUPT_PIN, 1);
 }
+
+static const Property nv11_properties[] = {
+    DEFINE_EDID_PROPERTIES(NV11State, edid_info),
+};
 
 static void nv11_class_init(ObjectClass *klass, const void *data)
 {
@@ -514,14 +519,26 @@ static void nv11_class_init(ObjectClass *klass, const void *data)
     k->device_id = PCI_DEVICE_ID_NVIDIA_NV11B;
     k->class_id  = PCI_CLASS_DISPLAY_VGA;
     dc->hotpluggable = false;
+    device_class_set_props(dc, nv11_properties);
     nv11_vga_class_reset(klass);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
+}
+
+static void nv11_instance_init(Object *o)
+{
+    NV11State *s = NV11(o);
+
+    object_initialize_child(o, "ddc-a", &s->ddc[NV11_DDC_BUS_A],
+                            TYPE_I2CDDC);
+    object_initialize_child(o, "ddc-b", &s->ddc[NV11_DDC_BUS_B],
+                            TYPE_I2CDDC);
 }
 
 static const TypeInfo nv11_type_info = {
     .name          = TYPE_NV11,
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(NV11State),
+    .instance_init = nv11_instance_init,
     .class_init    = nv11_class_init,
     .interfaces    = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },

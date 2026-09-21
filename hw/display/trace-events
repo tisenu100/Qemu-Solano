@@ -301,6 +301,11 @@ nv11_2d_expand(uint32_t eip, int x, int y, int w, int h, int opaque) "NV11: [2D]
 nv11_2d_line(uint32_t eip, int x0, int y0, int x1, int y1, uint32_t color) "NV11: [2D] [eip=0x%"PRIx32"] line (%d,%d)-(%d,%d) color=0x%"PRIx32
 nv11_cur_state(uint32_t eip, uint32_t img, int x, int y, uint32_t cfg, int en) "NV11: [CUR] [eip=0x%"PRIx32"] img=0x%"PRIx32" pos=(%d,%d) cfg=0x%"PRIx32" en=%d"
 
+# nv11_i2c.c
+nv11_i2c_init(void) "NV11: [I2C] init"
+nv11_i2c_drive(uint32_t eip, int bus, uint8_t val, bool scl, bool sda) "NV11: [I2C] [eip=0x%"PRIx32"] bus=%d drive=0x%02x scl=%d sda=%d"
+nv11_i2c_sense(uint32_t eip, int bus, uint8_t val) "NV11: [I2C] [eip=0x%"PRIx32"] bus=%d sense=0x%02x"
+
 # apple-gfx-mmio.m
 apple_gfx_mmio_iosfc_read(uint64_t offset, uint64_t res) "offset=0x%"PRIx64" res=0x%"PRIx64
 apple_gfx_mmio_iosfc_write(uint64_t offset, uint64_t val) "offset=0x%"PRIx64" val=0x%"PRIx64

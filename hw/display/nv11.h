@@ -28,6 +28,9 @@
 #include "qemu/osdep.h"
 #include "hw/pci/pci_device.h"
 #include "hw/display/vga_int.h"
+#include "hw/i2c/bitbang_i2c.h"
+#include "hw/display/i2c-ddc.h"
+#include "hw/display/edid.h"
 #include "system/memory.h"
 #include "qemu/timer.h"
 #include "hw/core/cpu.h"
@@ -248,6 +251,24 @@
 #define NV11_PRAMDAC_CUR_POS     0x300  /* (Y<<16)|X cursor position */
 #define NV11_PCRTC_CURSOR_CFG    0x810  /* 64x64 ARGB cursor configuration */
 
+/* DDC / I2C. NV11 exposes two bit-banged DDC ports through extended CRTC
+ * index registers. The status (sense) register reports the SCL/SDA line
+ * levels, the write (drive) register drives them. */
+#define NV11_DDC_BUS_A           0      /* CRTC 0x3e/0x3f, VGA / head 0 */
+#define NV11_DDC_BUS_B           1      /* CRTC 0x36/0x37, DFP / head 1 */
+#define NV11_DDC_BUSES           2
+#define NV11_DDC_SLAVE_ADDR      0x50   /* monitor EDID address */
+
+#define NV11_CRTC_DDC0_STATUS    0x36   /* bus B: SCL/SDA sense */
+#define NV11_CRTC_DDC0_WR        0x37   /* bus B: SCL/SDA drive */
+#define NV11_CRTC_DDC_STATUS     0x3E   /* bus A: SCL/SDA sense */
+#define NV11_CRTC_DDC_WR         0x3F   /* bus A: SCL/SDA drive */
+
+#define NV11_DDC_SCL_READ        (1 << 2)
+#define NV11_DDC_SDA_READ        (1 << 3)
+#define NV11_DDC_SDA_WRITE       (1 << 4)
+#define NV11_DDC_SCL_WRITE       (1 << 5)
+
 /* EIP handler for debugging */
 static inline uint32_t nv11_get_eip(void)
 {
@@ -319,6 +340,13 @@ typedef struct NV11State {
     /* FIFO window drain timer */
     QEMUTimer  *fifo_timer;
 
+    /* DDC / I2C. One bit-banged bus + monitor EDID slave per DDC port. */
+    bitbang_i2c_interface bbi2c[NV11_DDC_BUSES];
+    I2CDDCState ddc[NV11_DDC_BUSES];
+    qemu_edid_info edid_info;   /* shared by both connectors */
+    bool     ddc_scl[NV11_DDC_BUSES];  /* last sensed SCL level */
+    bool     ddc_sda[NV11_DDC_BUSES];  /* last sensed SDA level */
+
     /* 2D/D2D engine */
     uint32_t d2d_rop3;
     uint32_t d2d_clip_tl, d2d_clip_wh;         /* (y<<16)|x, (h<<16)|w */
@@ -383,6 +411,11 @@ void nv11_ptimer_write(NV11State *s, hwaddr offset, uint64_t val,
 void nv11_2d_init(NV11State *s);
 void nv11_2d_reset(NV11State *s);
 void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val);
+
+void nv11_i2c_init(NV11State *s);
+void nv11_i2c_reset(NV11State *s);
+void nv11_ddc_drive(NV11State *s, int bus, uint8_t value);
+uint8_t nv11_ddc_sense(NV11State *s, int bus);
 
 uint64_t nv11_bar0_read(NV11State *s, hwaddr offset, unsigned size);
 void nv11_bar0_write(NV11State *s, hwaddr offset, uint64_t val,
