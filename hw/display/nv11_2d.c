@@ -488,6 +488,354 @@ static void nv11_2d_bitmap_method(NV11State *s, uint32_t reg, uint32_t val)
     }
 }
 
+static void nv11_2d_rect_nv4_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    switch (reg) {
+    case NV11_2D_RECT_FMT:
+        /* colour depth is implied by the bound surface */
+        break;
+    case NV11_2D_RECT_SOLID_COLOR:
+        s->d2d_col1a = val;
+        break;
+    case NV11_2D_RECT_SOLID_TL:
+        s->d2d_rect_tl = val;
+        break;
+    case NV11_2D_RECT_SOLID_WH:
+        nv11_2d_fill_rect(s, s->d2d_rect_tl >> 16, s->d2d_rect_tl & 0xFFFF,
+                          val >> 16, val & 0xFFFF);
+        break;
+    case NV11_2D_RECT_X0:      /* one-colour clip point 0 (top-left) */
+        s->d2d_clip_c_tl = val;
+        break;
+    case NV11_2D_RECT_X1:      /* one-colour clip point 1 (exclusive) */
+        s->d2d_clip_c_br = val;
+        break;
+    case NV11_2D_RECT_XCOLOR:
+        s->d2d_exp_fg = val;
+        break;
+    case NV11_2D_RECT_XSIZE:
+        s->d2d_exp_wh = val;
+        break;
+    case NV11_2D_RECT_XPOINT:
+        nv11_2d_expand_begin(s, false, val, s->d2d_exp_wh);
+        break;
+    case NV11_2D_RECT_Y0:      /* two-colour clip point 0 */
+        s->d2d_clip_e_tl = val;
+        break;
+    case NV11_2D_RECT_Y1:      /* two-colour clip point 1 (exclusive) */
+        s->d2d_clip_e_br = val;
+        break;
+    case NV11_2D_RECT_YBG:
+        s->d2d_exp_bg = val;
+        break;
+    case NV11_2D_RECT_YFG:
+        s->d2d_exp_fg = val;
+        break;
+    case NV11_2D_RECT_YSIZE_IN:
+    case NV11_2D_RECT_YSIZE_OUT:
+        s->d2d_exp_wh = val;
+        break;
+    case NV11_2D_RECT_YPOINT:
+        nv11_2d_expand_begin(s, true, val, s->d2d_exp_wh);
+        break;
+    default:
+        if (reg >= NV11_2D_RECT_XDATA && reg < NV11_2D_RECT_XDATA_END) {
+            nv11_2d_expand_data(s, val);
+        } else if (reg >= NV11_2D_RECT_YDATA &&
+                   reg < NV11_2D_RECT_YDATA_END) {
+            nv11_2d_expand_data(s, val);
+        }
+        break;
+    }
+}
+
+/* BT.601 YUV -> 32-bit XRGB. */
+static inline uint32_t nv11_2d_yuv_to_rgb32(uint8_t y, uint8_t u, uint8_t v)
+{
+    int32_t c = (int32_t)y - 16, d = (int32_t)u - 128, e = (int32_t)v - 128;
+    int32_t r = (298 * c + 409 * e + 128) >> 8;
+    int32_t g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+    int32_t b = (298 * c + 516 * d + 128) >> 8;
+
+    if (r < 0) { r = 0; } else if (r > 255) { r = 255; }
+    if (g < 0) { g = 0; } else if (g > 255) { g = 255; }
+    if (b < 0) { b = 0; } else if (b > 255) { b = 255; }
+    return (0xFFu << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) |
+           (uint32_t)b;
+}
+
+/* Fit a 32-bit XRGB pixel into the destination surface's colour depth. */
+static inline uint32_t nv11_2d_rgb_fit(uint32_t rgb, const Nv11Surf *sf)
+{
+    uint32_t r = (rgb >> 16) & 0xFF;
+    uint32_t g = (rgb >> 8) & 0xFF;
+    uint32_t b = rgb & 0xFF;
+
+    switch (sf->fmt) {
+    case 0x1:                       /* 8 bpp: simple luma */
+        return (r * 77 + g * 150 + b * 29) >> 8;
+    case 0x2:                       /* 15 bpp RGB555 */
+        return ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+    case 0x5:                       /* 16 bpp RGB565 */
+        return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+    default:
+        return rgb;
+    }
+}
+
+/*
+ * Fetch one source pixel for the stretch blit. Sources are byte-aligned
+ * in VRAM: X8R8G8B8 is a straight 32-bit read, YUV 4:2:2 is packed two
+ * pixels per dword (YUYV or UYVY ordering of the chroma dword).
+ */
+static inline uint32_t nv11_2d_sifm_src(NV11State *s, uint32_t fmt,
+                                        uint32_t off, uint32_t pitch,
+                                        int32_t sx, int32_t sy)
+{
+    uint8_t *fb = memory_region_get_ram_ptr(&s->vga.vram);
+    uint32_t base = off + (uint32_t)sy * pitch;
+    uint32_t w;
+    uint8_t y, u, v;
+
+    if (fmt == NV11_2D_SIFM_FMT_X8R8G8B8) {
+        if (base > s->vga.vram_size ||
+            base + (uint32_t)sx * 4 + 4 > s->vga.vram_size) {
+            return 0;
+        }
+        return ldl_le_p(fb + base + (uint32_t)sx * 4);
+    }
+    base = off + (uint32_t)sy * pitch + (uint32_t)(sx & ~1) * 2;
+    if (base + 4 > s->vga.vram_size) {
+        return 0;
+    }
+    w = ldl_le_p(fb + base);
+    if (fmt == NV11_2D_SIFM_FMT_UYVY) {
+        u = w & 0xFF;
+        y = (sx & 1) ? ((w >> 24) & 0xFF) : ((w >> 8) & 0xFF);
+        v = (w >> 16) & 0xFF;
+    } else {                        /* YUYV */
+        y = (sx & 1) ? ((w >> 16) & 0xFF) : (w & 0xFF);
+        u = (w >> 8) & 0xFF;
+        v = (w >> 24) & 0xFF;
+    }
+    return nv11_2d_yuv_to_rgb32(y, u, v);
+}
+
+static void nv11_2d_sifm_run(NV11State *s)
+{
+    Nv11Surf sf;
+    uint32_t eip = nv11_get_eip();
+    uint32_t fmt = s->d2d_sifm_fmt & NV11_2D_SIFM_FMT_MASK;
+    int32_t src_w = s->d2d_sifm_src_wh & 0xFFFF;
+    int32_t src_h = s->d2d_sifm_src_wh >> 16;
+    uint32_t src_pitch = s->d2d_sifm_src_fmt & 0xFFFF;
+    int32_t dx0 = s->d2d_sifm_dst & 0xFFFF;
+    int32_t dy0 = s->d2d_sifm_dst >> 16;
+    int32_t dw = s->d2d_sifm_dst_wh & 0xFFFF;
+    int32_t dh = s->d2d_sifm_dst_wh >> 16;
+    int32_t c0, c1, r0, r1, x, y;
+    uint64_t u16, v16, usx, vsy;
+
+    if (src_w <= 0 || src_h <= 0 || dw <= 0 || dh <= 0) {
+        return;
+    }
+    if (fmt != NV11_2D_SIFM_FMT_YUYV &&
+        fmt != NV11_2D_SIFM_FMT_UYVY &&
+        fmt != NV11_2D_SIFM_FMT_X8R8G8B8) {
+        return;
+    }
+    nv11_2d_surface(s, &sf);
+
+    c0 = MAX(dx0, s->d2d_clip_tl & 0xFFFF);
+    c1 = MIN(dx0 + dw, (s->d2d_clip_tl & 0xFFFF) + (s->d2d_clip_wh & 0xFFFF));
+    r0 = MAX(dy0, s->d2d_clip_tl >> 16);
+    r1 = MIN(dy0 + dh, (s->d2d_clip_tl >> 16) + (s->d2d_clip_wh >> 16));
+    c0 = MAX(c0, s->d2d_sifm_clip_tl & 0xFFFF);
+    c1 = MIN(c1, (s->d2d_sifm_clip_tl & 0xFFFF) +
+                 (s->d2d_sifm_clip_wh & 0xFFFF));
+    r0 = MAX(r0, s->d2d_sifm_clip_tl >> 16);
+    r1 = MIN(r1, (s->d2d_sifm_clip_tl >> 16) + (s->d2d_sifm_clip_wh >> 16));
+    c0 = MAX(c0, 0); r0 = MAX(r0, 0);
+    c1 = MIN(c1, sf.w); r1 = MIN(r1, sf.h);
+    if (c0 >= c1 || r0 >= r1) {
+        return;
+    }
+
+    trace_nv11_2d_sifm(eip, c0, r0, c1 - c0, r1 - r0, src_w, src_h, fmt);
+
+    u16 = (uint64_t)(s->d2d_sifm_src_point & 0xFFFF) << 12;
+    v16 = (uint64_t)(s->d2d_sifm_src_point >> 16) << 12;
+    usx = (uint64_t)s->d2d_sifm_dudx >> 4;
+    vsy = (uint64_t)s->d2d_sifm_dvdy >> 4;
+
+    /* Slide the source origin to the clipped top-left corner */
+    u16 += (uint64_t)(c0 - dx0) * usx;
+    v16 += (uint64_t)(r0 - dy0) * vsy;
+
+    for (y = r0; y < r1; y++) {
+        uint64_t uu = u16;
+
+        for (x = c0; x < c1; x++) {
+            int32_t sx = (int32_t)((uu + 0x8000) >> 16);
+            int32_t sy = (int32_t)((v16 + 0x8000) >> 16);
+            uint8_t *p = nv11_2d_pix(s, &sf, x, y);
+
+            if (sx < 0) { sx = 0; }
+            if (sy < 0) { sy = 0; }
+            if (sx >= src_w) { sx = src_w - 1; }
+            if (sy >= src_h) { sy = src_h - 1; }
+            if (p) {
+                uint32_t rgb = nv11_2d_sifm_src(s, fmt, s->d2d_sifm_src_off,
+                                                src_pitch, sx, sy);
+                nv11_2d_store(p, sf.bpp, nv11_2d_rgb_fit(rgb, &sf));
+            }
+            uu += usx;
+        }
+        v16 += vsy;
+    }
+    nv11_2d_dirty(s, &sf, c0, r0, c1, r1);
+}
+
+static void nv11_2d_sifm_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    switch (reg) {
+    case NV11_2D_SIFM_FMT:
+        s->d2d_sifm_fmt = val;
+        break;
+    case NV11_2D_SIFM_OPER:
+        break;                      /* COPY is the only op we model */
+    case NV11_2D_SIFM_CLIP_TL:
+        s->d2d_sifm_clip_tl = val;
+        break;
+    case NV11_2D_SIFM_CLIP_WH:
+        s->d2d_sifm_clip_wh = val;
+        break;
+    case NV11_2D_SIFM_DST_TL:
+        s->d2d_sifm_dst = val;
+        break;
+    case NV11_2D_SIFM_DST_WH:
+        s->d2d_sifm_dst_wh = val;
+        break;
+    case NV11_2D_SIFM_DUDX:
+        s->d2d_sifm_dudx = val;
+        break;
+    case NV11_2D_SIFM_DVDY:
+        s->d2d_sifm_dvdy = val;
+        break;
+    case NV11_2D_SIFM_SRC_WH:
+        s->d2d_sifm_src_wh = val;
+        break;
+    case NV11_2D_SIFM_SRC_FMT:
+        s->d2d_sifm_src_fmt = val;
+        break;
+    case NV11_2D_SIFM_SRC_OFF:
+        s->d2d_sifm_src_off = val;
+        break;
+    case NV11_2D_SIFM_SRC_POINT:
+        s->d2d_sifm_src_point = val;
+        nv11_2d_sifm_run(s);
+        break;
+    default:
+        break;
+    }
+}
+
+static void nv11_2d_m2mf_run(NV11State *s)
+{
+    uint32_t eip = nv11_get_eip();
+    uint8_t *fb = memory_region_get_ram_ptr(&s->vga.vram);
+    uint32_t src, dst, len = s->d2d_m2mf_len;
+    uint32_t lines = s->d2d_m2mf_lines;
+    uint32_t psin = s->d2d_m2mf_pitch_in;
+    uint32_t psout = s->d2d_m2mf_pitch_out;
+    uint32_t i;
+
+    if (!len || !lines || len > s->vga.vram_size) {
+        return;
+    }
+    src = nv11_fifo_dma_frame(s, s->d2d_m2mf_in) + s->d2d_m2mf_off_in;
+    dst = nv11_fifo_dma_frame(s, s->d2d_m2mf_out) + s->d2d_m2mf_off_out;
+    if (src >= s->vga.vram_size ||
+        dst  >  s->vga.vram_size || dst > s->vga.vram_size - len) {
+        return;
+    }
+
+    trace_nv11_2d_m2mf(eip, src, dst, len, lines, psin, psout);
+
+    for (i = 0; i < lines; i++) {
+        uint32_t so = src + i * psin;
+        uint32_t doff = dst + i * psout;
+
+        if (so >= s->vga.vram_size || doff > s->vga.vram_size - len) {
+            return;
+        }
+        memmove(fb + doff, fb + so, len);
+    }
+    memory_region_set_dirty(&s->vga.vram, dst, len);
+}
+
+static void nv11_2d_m2mf_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    switch (reg) {
+    case NV11_2D_M2MF_DMA_NOTIFY:
+        s->d2d_m2mf_notify = val;
+        break;
+    case NV11_2D_M2MF_DMA_IN:
+        s->d2d_m2mf_in = val;
+        break;
+    case NV11_2D_M2MF_DMA_OUT:
+        s->d2d_m2mf_out = val;
+        break;
+    case NV11_2D_M2MF_OFF_IN:
+        s->d2d_m2mf_off_in = val;
+        break;
+    case NV11_2D_M2MF_OFF_OUT:
+        s->d2d_m2mf_off_out = val;
+        break;
+    case NV11_2D_M2MF_PITCH_IN:
+        s->d2d_m2mf_pitch_in = val;
+        break;
+    case NV11_2D_M2MF_PITCH_OUT:
+        s->d2d_m2mf_pitch_out = val;
+        break;
+    case NV11_2D_M2MF_LINE_LEN:
+        s->d2d_m2mf_len = val;
+        break;
+    case NV11_2D_M2MF_LINE_COUNT:
+        s->d2d_m2mf_lines = val;
+        nv11_2d_m2mf_run(s);
+        break;
+    case NV11_2D_M2MF_FORMAT:
+        s->d2d_m2mf_fmt = val;
+        break;
+    case NV11_2D_M2MF_BUF_NOTIFY:
+        break;
+    default:
+        break;
+    }
+}
+
+/* NOP / NOTIFY completion semantics: writing the 0x104 method with the
+ * notify-object handle makes the engine drop a STATUS_COMPLETED word into
+ * the notifier once the earlier methods have drained; we are synchronous,
+ * so the writeback happens immediately. */
+static void nv11_2d_notify_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    uint8_t *fb;
+    uint32_t base;
+
+    if (reg != NV11_2D_NOTIFY_METHOD) {
+        return;
+    }
+    fb = memory_region_get_ram_ptr(&s->vga.vram);
+    base = nv11_fifo_dma_frame(s, val);
+    if (base + NV11_NOTIFY_STATUS_OFF + 4 > s->vga.vram_size) {
+        return;
+    }
+    trace_nv11_2d_notify(nv11_get_eip(), base + NV11_NOTIFY_STATUS_OFF);
+    stl_le_p(fb + base + NV11_NOTIFY_STATUS_OFF, NV11_NOTIFY_STATUS_DONE);
+}
+
 static void nv11_2d_line_method(NV11State *s, uint32_t reg, uint32_t val)
 {
     if (reg == NV11_2D_LINE_COLOR) {
@@ -569,13 +917,16 @@ static void nv11_2d_surface_method(NV11State *s, uint32_t reg, uint32_t val)
     case NV11_2D_SURF_OFF_M:
         s->pgraph_scratch[NV11_2D_SURF_OFF_0 / 4] = val;
         break;
+    case NV11_2D_SURF_OFFDST_M:
+        s->pgraph_scratch[NV11_2D_SURF_OFF_0 / 4] = val;
+        break;
     }
 }
 
 void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
 {
     uint32_t eip = nv11_get_eip();
-    uint8_t cls = s->ch_class[chan];
+    uint16_t cls = s->ch_class[chan];
 
     trace_nv11_2d_method(eip, chan, reg, val);
 
@@ -598,9 +949,22 @@ void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
         nv11_2d_blt_method(s, reg, val);
         break;
     case NV11_CLASS_GDI:
-    case NV11_CLASS_RECT_NV4:
         nv11_2d_bitmap_method(s, reg, val);
         break;
+    case NV11_CLASS_RECT_NV4:
+        nv11_2d_rect_nv4_method(s, reg, val);
+        break;
+    case NV11_CLASS_SIFM:
+        nv11_2d_sifm_method(s, reg, val);
+        break;
+    case NV11_CLASS_M2MF:
+        nv11_2d_m2mf_method(s, reg, val);
+        break;
+    case NV11_CLASS_NOTIFY:
+        nv11_2d_notify_method(s, reg, val);
+        break;
+    case NV11_CLASS_NOP:
+        break;                      /* always-idle engine */
     case NV11_CLASS_LINE:
     case NV11_CLASS_LINE_NV4:
     case NV11_CLASS_LIN:

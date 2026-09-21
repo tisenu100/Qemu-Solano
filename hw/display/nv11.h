@@ -184,6 +184,11 @@
 #define NV11_CLASS_BLT_NV15      0x9F   /* NV15_BLIT */
 #define NV11_CLASS_LIN           0x1C   /* NV1_LIN */
 #define NV11_CLASS_SURF          0x62   /* NV4_SURFACE */
+#define NV11_CLASS_DMA           0x30   /* NV_DMA_IN_MEMORY (legacy) */
+#define NV11_CLASS_M2MF          0x39   /* NV3_M2MF */
+#define NV11_CLASS_SIFM          0x77   /* NV4_SIFM (stretch blit) */
+#define NV11_CLASS_NOP           0x100  /* NV_NOP */
+#define NV11_CLASS_NOTIFY        0x104  /* NV_NOTIFY */
 
 /* RAMIN instance table: context value 0x8000000X selects instance X, whose
  * entry lives at (X ^ 0x10) * 8 within the table; dword1's low 15 bits are
@@ -208,6 +213,7 @@
 #define NV11_2D_SURF_FMT_M       0x300   /* class 0x62: 1=8, 2=15, 4=16, 6=24 */
 #define NV11_2D_SURF_PITCH_M     0x304   /* (dst<<16)|src */
 #define NV11_2D_SURF_OFF_M       0x308
+#define NV11_2D_SURF_OFFDST_M    0x30C
 #define NV11_2D_BLT_TL_SRC       0x300
 #define NV11_2D_BLT_TL_DST       0x304
 #define NV11_2D_BLT_WH           0x308
@@ -234,7 +240,65 @@
 #define NV11_2D_LINE_P0B         0x408
 #define NV11_2D_LINE_P1B         0x40C
 
-#define NV11_2D_EXP_BUF_DWORDS   64
+/* NV4_GDI (class 0x4A) offsets within the 0x2000 subchannel window.  */
+#define NV11_2D_RECT_FMT         0x300   /* ignored (like other *_FORMAT) */
+#define NV11_2D_RECT_SOLID_COLOR 0x3FC   /* == BITMAP_COLOR1A */
+#define NV11_2D_RECT_SOLID_TL    0x400   /* == BITMAP_RECT_TL (y<<16)|x */
+#define NV11_2D_RECT_SOLID_WH    0x404   /* == BITMAP_RECT_WH (h<<16)|w */
+#define NV11_2D_RECT_X0          0x7EC   /* one-color CLIP_POINT0 */
+#define NV11_2D_RECT_X1          0x7F0   /* one-color CLIP_POINT1 */
+#define NV11_2D_RECT_XCOLOR      0x7F4   /* one-color foreground */
+#define NV11_2D_RECT_XSIZE       0x7F8   /* one-color (h<<16)|w */
+#define NV11_2D_RECT_XPOINT      0x7FC   /* one-color (y<<16)|x */
+#define NV11_2D_RECT_XDATA       0x800
+#define NV11_2D_RECT_XDATA_END   0x900
+#define NV11_2D_RECT_Y0          0xBE4   /* two-color CLIP_POINT0 */
+#define NV11_2D_RECT_Y1          0xBE8   /* two-color CLIP_POINT1 */
+#define NV11_2D_RECT_YBG         0xBEC   /* two-color COLOR_0 */
+#define NV11_2D_RECT_YFG         0xBF0   /* two-color COLOR_1 */
+#define NV11_2D_RECT_YSIZE_IN    0xBF4
+#define NV11_2D_RECT_YSIZE_OUT   0xBF8
+#define NV11_2D_RECT_YPOINT      0xBFC
+#define NV11_2D_RECT_YDATA       0xC00
+#define NV11_2D_RECT_YDATA_END   0xD00
+
+/* NV4_SIFM / stretch blit (class 0x77). */
+#define NV11_2D_SIFM_FMT         0x300
+#define NV11_2D_SIFM_OPER        0x304
+#define NV11_2D_SIFM_CLIP_TL     0x308
+#define NV11_2D_SIFM_CLIP_WH     0x30C
+#define NV11_2D_SIFM_DST_TL      0x310
+#define NV11_2D_SIFM_DST_WH      0x314
+#define NV11_2D_SIFM_DUDX        0x318
+#define NV11_2D_SIFM_DVDY        0x31C
+#define NV11_2D_SIFM_SRC_WH      0x400
+#define NV11_2D_SIFM_SRC_FMT     0x404
+#define NV11_2D_SIFM_SRC_OFF     0x408
+#define NV11_2D_SIFM_SRC_POINT   0x40C   /* write triggers the blit */
+#define NV11_2D_SIFM_FMT_X8R8G8B8 0x04
+#define NV11_2D_SIFM_FMT_UYVY     0x06
+#define NV11_2D_SIFM_FMT_YUYV     0x05
+#define NV11_2D_SIFM_FMT_MASK     0xFF
+
+/* NV3_M2MF (class 0x39). */
+#define NV11_2D_M2MF_DMA_NOTIFY  0x180
+#define NV11_2D_M2MF_DMA_IN      0x184
+#define NV11_2D_M2MF_DMA_OUT     0x188
+#define NV11_2D_M2MF_OFF_IN      0x30C
+#define NV11_2D_M2MF_OFF_OUT     0x310
+#define NV11_2D_M2MF_PITCH_IN    0x314
+#define NV11_2D_M2MF_PITCH_OUT   0x318
+#define NV11_2D_M2MF_LINE_LEN    0x31C
+#define NV11_2D_M2MF_LINE_COUNT  0x320   /* write triggers the copy */
+#define NV11_2D_M2MF_FORMAT      0x324
+#define NV11_2D_M2MF_BUF_NOTIFY  0x328
+
+/* Notify (classes 0x100/0x104). */
+#define NV11_2D_NOTIFY_METHOD    0x104
+#define NV11_NOTIFY_STATUS_OFF   0x0C
+#define NV11_NOTIFY_STATUS_DONE  0x00000000
+
+#define NV11_2D_EXP_BUF_DWORDS   128
 
 /* Window opcodes */
 #define NV11_WINDOW_OP_INDEX     3
@@ -331,7 +395,7 @@ typedef struct NV11State {
 
     /* Per-subchannel object class, decoded from RAMIN on context bind.
      * 0 = unbound: nv11_2d_method ignores the method. */
-    uint8_t  ch_class[NV11_FIFO_CHANNELS];
+    uint16_t ch_class[NV11_FIFO_CHANNELS];
 
     /* PGRAPH */
     uint32_t pgraph_scratch[(NV11_PGRAPH_END - NV11_PGRAPH_OFF) / 4];
@@ -365,6 +429,20 @@ typedef struct NV11State {
     uint32_t d2d_exp_h, d2d_exp_bw;
     int      d2d_exp_bw32, d2d_exp_row, d2d_exp_dw;
     uint32_t d2d_exp_buf[NV11_2D_EXP_BUF_DWORDS];
+
+    /* SIFM (stretch blit) */
+    uint32_t d2d_sifm_fmt, d2d_sifm_clip_tl, d2d_sifm_clip_wh;
+    uint32_t d2d_sifm_dst, d2d_sifm_dst_wh;
+    uint32_t d2d_sifm_dudx, d2d_sifm_dvdy;
+    uint32_t d2d_sifm_src_wh, d2d_sifm_src_fmt, d2d_sifm_src_off;
+    uint32_t d2d_sifm_src_point;
+
+    /* M2MF */
+    uint32_t d2d_m2mf_in, d2d_m2mf_out;
+    uint32_t d2d_m2mf_off_in, d2d_m2mf_off_out;
+    uint32_t d2d_m2mf_pitch_in, d2d_m2mf_pitch_out;
+    uint32_t d2d_m2mf_len, d2d_m2mf_lines, d2d_m2mf_fmt;
+    uint32_t d2d_m2mf_notify;
 
     /* Hardware cursor (head 0) */
     uint32_t cur_pos;           /* NV_PRAMDAC_CU_START_POS: (Y<<16)|X */
@@ -411,6 +489,7 @@ void nv11_ptimer_write(NV11State *s, hwaddr offset, uint64_t val,
 void nv11_2d_init(NV11State *s);
 void nv11_2d_reset(NV11State *s);
 void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val);
+uint32_t nv11_fifo_dma_frame(NV11State *s, uint32_t handle);
 
 void nv11_i2c_init(NV11State *s);
 void nv11_i2c_reset(NV11State *s);
