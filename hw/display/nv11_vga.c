@@ -33,7 +33,7 @@ int nv11_get_bpp(VGACommonState *s)
 {
     NV11State *n = container_of(s, NV11State, vga);
 
-    switch (n->nv_crtc_reg[0x28]) {
+    switch (n->nv_crtc_reg[0x28] & 0x03) {
     case 1:
         return 8;
     case 2:
