@@ -340,6 +340,9 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
     if (off >= NV11_PCRTC1_OFF && off < NV11_PCRTC1_END) {
         uint32_t reg = off - NV11_PCRTC1_OFF;
         trace_nv11_pcrtc_write(eip, 1, reg, size, (uint32_t)val);
+        if (reg == NV11_PCRTC_CURSOR_CFG) {
+            s->cur_cfg = (uint32_t)val;
+        }
         goto flat_write;
     }
 
@@ -393,6 +396,9 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
         uint32_t idx = reg / 4;
         if (idx < sizeof(s->pramdac[1]) / sizeof(s->pramdac[1][0])) {
             s->pramdac[1][idx] = (uint32_t)val;
+        }
+        if (reg == NV11_PRAMDAC_CUR_POS) {
+            s->cur_pos = (uint32_t)val;
         }
         trace_nv11_pramdac_write(eip, 1, reg, size, (uint32_t)val);
         return;
