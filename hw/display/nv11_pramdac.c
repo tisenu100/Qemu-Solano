@@ -30,12 +30,5 @@ void nv11_pramdac_init(NV11State *s)
 {
     memset(s->pramdac, 0, sizeof(s->pramdac));
 
-    /* It is relatively unknown what status these registers have. X programs them even if we don't have a flat panel*/
-    for (int head = 0; head < 2; head++) {
-        s->pramdac[head][NV11_PRAMDAC_FP_VDISP / 4] = 4095;
-        s->pramdac[head][NV11_PRAMDAC_FP_VT / 4] = 4095;
-        s->pramdac[head][NV11_PRAMDAC_FP_HDISP / 4] = 4095;
-        s->pramdac[head][NV11_PRAMDAC_FP_HT / 4] = 4095;
-    }
     trace_nv11_pramdac_init();
 }
