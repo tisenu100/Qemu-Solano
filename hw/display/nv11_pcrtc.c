@@ -116,6 +116,12 @@ uint8_t nv11_pcrtc_read(NV11State *s, uint8_t index)
         return 0xB2;
     case 0x38:
         return s->win_op;
+    case 0x28:
+        /* Bit7 = Flat Panel (Force 0) */
+        return s->nv_crtc_reg[index] & ~0x80;
+    case 0x33:
+        /* Bit0 = ??? (Related on enabling the TV encoder if not 1) */
+        return s->nv_crtc_reg[index] | 0x01;
     default:
         break;
     }

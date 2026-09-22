@@ -83,6 +83,23 @@ void nv11_i2c_init(NV11State *s)
         qemu_edid_generate(s->ddc[i].edid_blob,
                            sizeof(s->ddc[i].edid_blob), &s->edid_info);
 
+        /* QEMU's EDID code generates us a DFP panel configuration
+         * The Geforce 2 is way too old for such adaptation. So instead
+         * force a VGA EDID 1.3 configuration matching the period accuracy
+         * 
+         * 0x08 = analog, 0.7Vpp, separate syncs. Then fix block checksum. */
+        s->ddc[i].edid_blob[20] = 0x08;
+        uint8_t sum = 0;
+    
+        if (s->ddc[i].edid_blob[19] == 4) {
+            s->ddc[i].edid_blob[19] = 3;
+        }
+
+        for (int j = 0; j < 127; j++) {
+            sum += s->ddc[i].edid_blob[j];
+        }
+        s->ddc[i].edid_blob[127] = (uint8_t)(0x100 - sum);
+
         i2c_slave_set_address(I2C_SLAVE(&s->ddc[i]), NV11_DDC_SLAVE_ADDR);
         qdev_realize(DEVICE(&s->ddc[i]), BUS(bus), &error_abort);
     }
