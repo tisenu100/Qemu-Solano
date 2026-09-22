@@ -1432,15 +1432,18 @@ static void gd_menu_quit(GtkMenuItem *item, void *opaque)
 
 static void gd_menu_send_cad(GtkMenuItem *item, void *opaque)
 {
-    QemuConsole *con = NULL;
+    GtkDisplayState *s = opaque;
+    VirtualConsole *vc = gd_vc_find_current(s);
 
-    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_CTRL, true);
-    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_ALT, true);
-    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_DELETE, true);
+    if (vc && vc->type == GD_VC_GFX) {
+        qkbd_state_key_event(vc->gfx.kbd, Q_KEY_CODE_CTRL, true);
+        qkbd_state_key_event(vc->gfx.kbd, Q_KEY_CODE_ALT, true);
+        qkbd_state_key_event(vc->gfx.kbd, Q_KEY_CODE_DELETE, true);
 
-    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_DELETE, false);
-    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_ALT, false);
-    qemu_input_event_send_key_qcode(con, Q_KEY_CODE_CTRL, false);
+        qkbd_state_key_event(vc->gfx.kbd, Q_KEY_CODE_DELETE, false);
+        qkbd_state_key_event(vc->gfx.kbd, Q_KEY_CODE_ALT, false);
+        qkbd_state_key_event(vc->gfx.kbd, Q_KEY_CODE_CTRL, false);
+    }
 }
 
 static void gd_menu_switch_vc(GtkMenuItem *item, void *opaque)
