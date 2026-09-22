@@ -325,8 +325,7 @@
 #define NV11_PRAMDAC_CUR_POS     0x300  /* (Y<<16)|X cursor position */
 #define NV11_PCRTC_CURSOR_CFG    0x810  /* 64x64 ARGB cursor configuration */
 
-/* DDC / I2C. NV11 exposes two bit-banged DDC ports through extended CRTC
- * index registers. The status (sense) register reports the SCL/SDA line
+/* DDC / I2C. NV11 exposes one bit-banged DDC port through extended CRTC
  * levels, the write (drive) register drives them. */
 #define NV11_DDC_BUS_A           0      /* CRTC 0x3e/0x3f, VGA / head 0 */
 #define NV11_DDC_BUS_B           1      /* CRTC 0x36/0x37, DFP / head 1 */
@@ -414,10 +413,10 @@ typedef struct NV11State {
     /* FIFO window drain timer */
     QEMUTimer  *fifo_timer;
 
-    /* DDC / I2C. One bit-banged bus + monitor EDID slave per DDC port. */
+    /* DDC / I2C. One bit-banged bus + monitor EDID slave. */
     bitbang_i2c_interface bbi2c[NV11_DDC_BUSES];
-    I2CDDCState ddc[NV11_DDC_BUSES];
-    qemu_edid_info edid_info;   /* shared by both connectors */
+    I2CDDCState ddc;
+    qemu_edid_info edid_info;   /* monitor EDID */
     bool     ddc_scl[NV11_DDC_BUSES];  /* last sensed SCL level */
     bool     ddc_sda[NV11_DDC_BUSES];  /* last sensed SDA level */
 

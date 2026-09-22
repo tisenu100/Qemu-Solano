@@ -561,10 +561,7 @@ static void nv11_instance_init(Object *o)
 {
     NV11State *s = NV11(o);
 
-    object_initialize_child(o, "ddc-a", &s->ddc[NV11_DDC_BUS_A],
-                            TYPE_I2CDDC);
-    object_initialize_child(o, "ddc-b", &s->ddc[NV11_DDC_BUS_B],
-                            TYPE_I2CDDC);
+    object_initialize_child(o, "ddc", &s->ddc, TYPE_I2CDDC);
 }
 
 static const TypeInfo nv11_type_info = {
