@@ -74,6 +74,12 @@ void nv11_pcrtc_write(NV11State *s, uint8_t index, uint8_t value)
                              s->cur_pos & 0xFFFF, s->cur_pos >> 16,
                              s->cur_cfg, s->cur_enabled);
         break;
+    case NV11_CRTC_DDC0_WR:
+        nv11_ddc_drive(s, NV11_DDC_BUS_B, value);
+        break;
+    case NV11_CRTC_DDC_WR:
+        nv11_ddc_drive(s, NV11_DDC_BUS_A, value);
+        break;
     case 0x2E:
         trace_nv11_pcrtc_strap_write(eip, index, value);
         break;
@@ -98,18 +104,24 @@ uint8_t nv11_pcrtc_read(NV11State *s, uint8_t index)
     }
 
     switch (index) {
+    case NV11_CRTC_DDC0_STATUS:
+        return nv11_ddc_sense(s, NV11_DDC_BUS_B);
+    case NV11_CRTC_DDC_STATUS:
+        return nv11_ddc_sense(s, NV11_DDC_BUS_A);
     case 0x2E:
         return 0x44;
-    case 0x36:
-        return 0xff;
-    case 0x3E:
-        return 0xff;
     case 0x3C:
         return 0x01;
     case 0x44:
         return 0xB2;
     case 0x38:
         return s->win_op;
+    case 0x28:
+        /* Bit7 = Flat Panel (Force 0) */
+        return s->nv_crtc_reg[index] & ~0x80;
+    case 0x33:
+        /* Bit0 = ??? (Related on enabling the TV encoder if not 1) */
+        return s->nv_crtc_reg[index] | 0x01;
     default:
         break;
     }
@@ -123,11 +135,13 @@ void nv11_pcrtc_init(NV11State *s)
     s->pcrtc_scratch[1][NV11_PCRTC_INTR / 4] = 0;
 
     s->nv_crtc_reg[0x2E] = 0x44;
-    s->nv_crtc_reg[0x36] = 0xff;
     s->nv_crtc_reg[0x3C] = 0x01;
-    s->nv_crtc_reg[0x3E] = 0xff;
     s->nv_crtc_reg[0x44] = 0xB2;
     s->nv_crtc_reg[0x38] = 0x00;
+    /* DDC drive registers: both lines released (high), port enabled.
+     * 0x31 = SCL_WRITE | SDA_WRITE | 0x01. */
+    s->nv_crtc_reg[NV11_CRTC_DDC0_WR] = 0x31;
+    s->nv_crtc_reg[NV11_CRTC_DDC_WR] = 0x31;
 
     trace_nv11_pcrtc_init();
 }

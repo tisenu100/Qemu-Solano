@@ -33,7 +33,7 @@ int nv11_get_bpp(VGACommonState *s)
 {
     NV11State *n = container_of(s, NV11State, vga);
 
-    switch (n->nv_crtc_reg[0x28]) {
+    switch (n->nv_crtc_reg[0x28] & 0x03) {
     case 1:
         return 8;
     case 2:
@@ -76,11 +76,28 @@ void nv11_get_params(VGACommonState *s, VGADisplayParams *params)
 
 void nv11_get_resolution(VGACommonState *s, int *pwidth, int *pheight)
 {
-    *pwidth = (s->cr[VGA_CRTC_H_DISP] + 1) * 8;
-    *pheight = s->cr[VGA_CRTC_V_DISP_END] |
+    NV11State *n = container_of(s, NV11State, vga);
+    int width_chars = s->cr[VGA_CRTC_H_DISP] + 1;
+    int height = s->cr[VGA_CRTC_V_DISP_END] |
         ((s->cr[VGA_CRTC_OVERFLOW] & 0x02) << 7) |
         ((s->cr[VGA_CRTC_OVERFLOW] & 0x40) << 3);
-    *pheight = (*pheight + 1);
+
+    /* NV extended overflow:
+     * CRTC 0x2D bit1 = horizDisplay bit8, CRTC 0x25 bit1 =
+     * vertDisplay bit10, CRTC 0x41 bit2 = vertDisplay bit11.
+     * Without these any mode taller than 1024 is truncated. */
+    if (n->nv_crtc_reg[0x2D] & 0x02) {
+        width_chars += 0x100;
+    }
+    if (n->nv_crtc_reg[0x25] & 0x02) {
+        height |= 0x400;
+    }
+    if (n->nv_crtc_reg[0x41] & 0x04) {
+        height |= 0x800;
+    }
+
+    *pwidth = width_chars * 8;
+    *pheight = height + 1;
 }
 
 static uint32_t nv11_cursor_blend(uint32_t fg, uint32_t bg)
@@ -102,7 +119,29 @@ static uint32_t nv11_cursor_blend(uint32_t fg, uint32_t bg)
 }
 
 /* The 64x64 ARGB cursor image is composited directly into the 32-bit shadow
- * surface rows that Qemu's backend rebuilds each frame. */
+ * surface rows that Qemu's backend rebuilds each frame.
+ * Cursor X/Y are signed 16-bit (allows partial offscreen, e.g. 0xFFF9 = -7).
+ */
+static inline int nv11_cur_x(uint32_t pos)
+{
+    return (int16_t)(pos & 0xFFFF);
+}
+
+static inline int nv11_cur_y(uint32_t pos)
+{
+    return (int16_t)((pos >> 16) & 0xFFFF);
+}
+
+static void nv11_cursor_invalidate_range(VGACommonState *vga, uint32_t pos)
+{
+    int y = nv11_cur_y(pos);
+
+    if (y < 0) {
+        y = 0;
+    }
+    vga_invalidate_scanlines(vga, y, y + 64);
+}
+
 void nv11_cursor_invalidate(VGACommonState *vga)
 {
     NV11State *s = container_of(vga, NV11State, vga);
@@ -110,16 +149,14 @@ void nv11_cursor_invalidate(VGACommonState *vga)
     if (s->last_cur_pos != s->cur_pos ||
         s->last_cur_img != s->cur_img ||
         s->last_cur_enabled != s->cur_enabled) {
-        vga_invalidate_scanlines(vga, vga->hw_cursor_y,
-                                 vga->hw_cursor_y + 64);
+        nv11_cursor_invalidate_range(vga, s->last_cur_pos);
         vga->hw_cursor_x = s->cur_pos & 0xFFFF;
         vga->hw_cursor_y = s->cur_pos >> 16;
         s->last_cur_pos = s->cur_pos;
         s->last_cur_img = s->cur_img;
         s->last_cur_enabled = s->cur_enabled;
         if (s->cur_enabled) {
-            vga_invalidate_scanlines(vga, vga->hw_cursor_y,
-                                     vga->hw_cursor_y + 64);
+            nv11_cursor_invalidate_range(vga, s->cur_pos);
         }
     }
 }
@@ -129,35 +166,42 @@ void nv11_cursor_draw_line(VGACommonState *vga, uint8_t *d, int y)
     NV11State *s = container_of(vga, NV11State, vga);
     uint32_t *dp;
     uint32_t row;
-    int cx, cy, i;
+    int cx, cy, src_x0, dst_x, i;
 
     if (!s->cur_enabled) {
         return;
     }
-    cy = s->cur_pos >> 16;
+    cx = nv11_cur_x(s->cur_pos);
+    cy = nv11_cur_y(s->cur_pos);
     if (y < cy || y >= cy + 64) {
         return;
     }
-    row = s->cur_img + (uint32_t)(y - cy) * 256;
+    src_x0 = 0;
+    dst_x = cx;
+    if (dst_x < 0) {
+        src_x0 = -dst_x;
+        dst_x = 0;
+    }
+    if (dst_x >= vga->last_scr_width) {
+        return;
+    }
+    row = s->cur_img + (uint32_t)(y - cy) * 256 + (uint32_t)src_x0 * 4;
     if (row + 256 > vga->vram_size) {
         return;
     }
-    cx = s->cur_pos & 0xFFFF;
-    if (cx >= vga->last_scr_width) {
-        return;
-    }
-    dp = (uint32_t *)d + cx;
-    for (i = 0; i < 64; i++) {
+    dp = (uint32_t *)d + dst_x;
+    for (i = src_x0; i < 64; i++) {
         uint32_t px;
+        int dst_i = dst_x + (i - src_x0);
 
-        if (cx + i >= vga->last_scr_width) {
+        if (dst_i >= vga->last_scr_width) {
             break;
         }
-        px = ldl_le_p(vga->vram_ptr + row + i * 4);
+        px = ldl_le_p(vga->vram_ptr + row + (uint32_t)(i - src_x0) * 4);
         if ((px >> 24) == 0) {
             continue;   /* Fully transparent */
         }
-        dp[i] = nv11_cursor_blend(px, dp[i]);
+        dp[i - src_x0] = nv11_cursor_blend(px, dp[i - src_x0]);
     }
 }
 
@@ -222,6 +266,7 @@ static void nv11_vga_reset(DeviceState *dev)
     vga_common_reset(&s->vga);
     nv11_pgraph_reset(s);
     nv11_fifo_reset(s);
+    nv11_i2c_reset(s);
 }
 
 void nv11_vga_class_reset(ObjectClass *klass)

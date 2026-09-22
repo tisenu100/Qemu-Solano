@@ -29,5 +29,6 @@
 void nv11_pramdac_init(NV11State *s)
 {
     memset(s->pramdac, 0, sizeof(s->pramdac));
+
     trace_nv11_pramdac_init();
 }

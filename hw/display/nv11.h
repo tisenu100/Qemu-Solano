@@ -28,13 +28,16 @@
 #include "qemu/osdep.h"
 #include "hw/pci/pci_device.h"
 #include "hw/display/vga_int.h"
+#include "hw/i2c/bitbang_i2c.h"
+#include "hw/display/i2c-ddc.h"
+#include "hw/display/edid.h"
 #include "system/memory.h"
 #include "qemu/timer.h"
 #include "hw/core/cpu.h"
 
 /* BAR sizes */
 #define NV11_BAR0_SIZE           0x1000000   /* 16 MB */
-#define NV11_BAR1_VRAM_SIZE      0x0400000   /* 64 MB (Needs work for 32MB variants some day) */
+#define NV11_BAR1_VRAM_SIZE      0x4000000   /* 64 MB (Needs work for 32MB variants some day) */
 #define NV11_BAR1_VRAM_SIZE_MB   64
 #define NV11_ROM_SIZE            0x010000    /* 64 KB */
 
@@ -130,6 +133,16 @@
 #define NV11_PGRAPH_CTX_CTRL     0x000710
 #define NV11_PGRAPH_FIFO         0x000720   /* bit0 = fifo enable */
 
+/* PMC */
+#define NV11_PMC_INTR_HOST                   0x000100   /* no pending IRQs = 0 */
+
+/* PFIFO */
+#define NV11_PFIFO_RUNOUT_STATUS             0x002400
+#define NV11_PFIFO_CACHES                    0x002500
+#define NV11_PFIFO_CACHE0_STATUS             0x003014
+#define NV11_PFIFO_CACHE1_STATUS             0x003214
+#define NV11_PFIFO_STATUS_EMPTY              0x00000010u /* EMPTY bit, RANOUT=0 */
+
 /* PFIFO CACHE1 DMA context */
 #define NV11_PFIFO_CACHE1_DMA_FETCH          0x003224
 #define NV11_PFIFO_CACHE1_DMA_CTL            0x003230
@@ -181,6 +194,11 @@
 #define NV11_CLASS_BLT_NV15      0x9F   /* NV15_BLIT */
 #define NV11_CLASS_LIN           0x1C   /* NV1_LIN */
 #define NV11_CLASS_SURF          0x62   /* NV4_SURFACE */
+#define NV11_CLASS_DMA           0x30   /* NV_DMA_IN_MEMORY (legacy) */
+#define NV11_CLASS_M2MF          0x39   /* NV3_M2MF */
+#define NV11_CLASS_SIFM          0x77   /* NV4_SIFM (stretch blit) */
+#define NV11_CLASS_NOP           0x100  /* NV_NOP */
+#define NV11_CLASS_NOTIFY        0x104  /* NV_NOTIFY */
 
 /* RAMIN instance table: context value 0x8000000X selects instance X, whose
  * entry lives at (X ^ 0x10) * 8 within the table; dword1's low 15 bits are
@@ -205,6 +223,7 @@
 #define NV11_2D_SURF_FMT_M       0x300   /* class 0x62: 1=8, 2=15, 4=16, 6=24 */
 #define NV11_2D_SURF_PITCH_M     0x304   /* (dst<<16)|src */
 #define NV11_2D_SURF_OFF_M       0x308
+#define NV11_2D_SURF_OFFDST_M    0x30C
 #define NV11_2D_BLT_TL_SRC       0x300
 #define NV11_2D_BLT_TL_DST       0x304
 #define NV11_2D_BLT_WH           0x308
@@ -231,7 +250,65 @@
 #define NV11_2D_LINE_P0B         0x408
 #define NV11_2D_LINE_P1B         0x40C
 
-#define NV11_2D_EXP_BUF_DWORDS   64
+/* NV4_GDI (class 0x4A) offsets within the 0x2000 subchannel window.  */
+#define NV11_2D_RECT_FMT         0x300   /* ignored (like other *_FORMAT) */
+#define NV11_2D_RECT_SOLID_COLOR 0x3FC   /* == BITMAP_COLOR1A */
+#define NV11_2D_RECT_SOLID_TL    0x400   /* == BITMAP_RECT_TL (y<<16)|x */
+#define NV11_2D_RECT_SOLID_WH    0x404   /* == BITMAP_RECT_WH (h<<16)|w */
+#define NV11_2D_RECT_X0          0x7EC   /* one-color CLIP_POINT0 */
+#define NV11_2D_RECT_X1          0x7F0   /* one-color CLIP_POINT1 */
+#define NV11_2D_RECT_XCOLOR      0x7F4   /* one-color foreground */
+#define NV11_2D_RECT_XSIZE       0x7F8   /* one-color (h<<16)|w */
+#define NV11_2D_RECT_XPOINT      0x7FC   /* one-color (y<<16)|x */
+#define NV11_2D_RECT_XDATA       0x800
+#define NV11_2D_RECT_XDATA_END   0x900
+#define NV11_2D_RECT_Y0          0xBE4   /* two-color CLIP_POINT0 */
+#define NV11_2D_RECT_Y1          0xBE8   /* two-color CLIP_POINT1 */
+#define NV11_2D_RECT_YBG         0xBEC   /* two-color COLOR_0 */
+#define NV11_2D_RECT_YFG         0xBF0   /* two-color COLOR_1 */
+#define NV11_2D_RECT_YSIZE_IN    0xBF4
+#define NV11_2D_RECT_YSIZE_OUT   0xBF8
+#define NV11_2D_RECT_YPOINT      0xBFC
+#define NV11_2D_RECT_YDATA       0xC00
+#define NV11_2D_RECT_YDATA_END   0xD00
+
+/* NV4_SIFM / stretch blit (class 0x77). */
+#define NV11_2D_SIFM_FMT         0x300
+#define NV11_2D_SIFM_OPER        0x304
+#define NV11_2D_SIFM_CLIP_TL     0x308
+#define NV11_2D_SIFM_CLIP_WH     0x30C
+#define NV11_2D_SIFM_DST_TL      0x310
+#define NV11_2D_SIFM_DST_WH      0x314
+#define NV11_2D_SIFM_DUDX        0x318
+#define NV11_2D_SIFM_DVDY        0x31C
+#define NV11_2D_SIFM_SRC_WH      0x400
+#define NV11_2D_SIFM_SRC_FMT     0x404
+#define NV11_2D_SIFM_SRC_OFF     0x408
+#define NV11_2D_SIFM_SRC_POINT   0x40C   /* write triggers the blit */
+#define NV11_2D_SIFM_FMT_X8R8G8B8 0x04
+#define NV11_2D_SIFM_FMT_UYVY     0x06
+#define NV11_2D_SIFM_FMT_YUYV     0x05
+#define NV11_2D_SIFM_FMT_MASK     0xFF
+
+/* NV3_M2MF (class 0x39). */
+#define NV11_2D_M2MF_DMA_NOTIFY  0x180
+#define NV11_2D_M2MF_DMA_IN      0x184
+#define NV11_2D_M2MF_DMA_OUT     0x188
+#define NV11_2D_M2MF_OFF_IN      0x30C
+#define NV11_2D_M2MF_OFF_OUT     0x310
+#define NV11_2D_M2MF_PITCH_IN    0x314
+#define NV11_2D_M2MF_PITCH_OUT   0x318
+#define NV11_2D_M2MF_LINE_LEN    0x31C
+#define NV11_2D_M2MF_LINE_COUNT  0x320   /* write triggers the copy */
+#define NV11_2D_M2MF_FORMAT      0x324
+#define NV11_2D_M2MF_BUF_NOTIFY  0x328
+
+/* Notify (classes 0x100/0x104). */
+#define NV11_2D_NOTIFY_METHOD    0x104
+#define NV11_NOTIFY_STATUS_OFF   0x0C
+#define NV11_NOTIFY_STATUS_DONE  0x00000000
+
+#define NV11_2D_EXP_BUF_DWORDS   128
 
 /* Window opcodes */
 #define NV11_WINDOW_OP_INDEX     3
@@ -247,6 +324,24 @@
 #define NV11_CRTC_HCUR_ADDR2     0x2F   /* image addr bits 31-24 */
 #define NV11_PRAMDAC_CUR_POS     0x300  /* (Y<<16)|X cursor position */
 #define NV11_PCRTC_CURSOR_CFG    0x810  /* 64x64 ARGB cursor configuration */
+
+/* DDC / I2C. NV11 exposes two bit-banged DDC ports through extended CRTC
+ * index registers. The status (sense) register reports the SCL/SDA line
+ * levels, the write (drive) register drives them. */
+#define NV11_DDC_BUS_A           0      /* CRTC 0x3e/0x3f, VGA / head 0 */
+#define NV11_DDC_BUS_B           1      /* CRTC 0x36/0x37, DFP / head 1 */
+#define NV11_DDC_BUSES           2
+#define NV11_DDC_SLAVE_ADDR      0x50   /* monitor EDID address */
+
+#define NV11_CRTC_DDC0_STATUS    0x36   /* bus B: SCL/SDA sense */
+#define NV11_CRTC_DDC0_WR        0x37   /* bus B: SCL/SDA drive */
+#define NV11_CRTC_DDC_STATUS     0x3E   /* bus A: SCL/SDA sense */
+#define NV11_CRTC_DDC_WR         0x3F   /* bus A: SCL/SDA drive */
+
+#define NV11_DDC_SCL_READ        (1 << 2)
+#define NV11_DDC_SDA_READ        (1 << 3)
+#define NV11_DDC_SDA_WRITE       (1 << 4)
+#define NV11_DDC_SCL_WRITE       (1 << 5)
 
 /* EIP handler for debugging */
 static inline uint32_t nv11_get_eip(void)
@@ -310,7 +405,7 @@ typedef struct NV11State {
 
     /* Per-subchannel object class, decoded from RAMIN on context bind.
      * 0 = unbound: nv11_2d_method ignores the method. */
-    uint8_t  ch_class[NV11_FIFO_CHANNELS];
+    uint16_t ch_class[NV11_FIFO_CHANNELS];
 
     /* PGRAPH */
     uint32_t pgraph_scratch[(NV11_PGRAPH_END - NV11_PGRAPH_OFF) / 4];
@@ -318,6 +413,13 @@ typedef struct NV11State {
 
     /* FIFO window drain timer */
     QEMUTimer  *fifo_timer;
+
+    /* DDC / I2C. One bit-banged bus + monitor EDID slave per DDC port. */
+    bitbang_i2c_interface bbi2c[NV11_DDC_BUSES];
+    I2CDDCState ddc[NV11_DDC_BUSES];
+    qemu_edid_info edid_info;   /* shared by both connectors */
+    bool     ddc_scl[NV11_DDC_BUSES];  /* last sensed SCL level */
+    bool     ddc_sda[NV11_DDC_BUSES];  /* last sensed SDA level */
 
     /* 2D/D2D engine */
     uint32_t d2d_rop3;
@@ -337,6 +439,20 @@ typedef struct NV11State {
     uint32_t d2d_exp_h, d2d_exp_bw;
     int      d2d_exp_bw32, d2d_exp_row, d2d_exp_dw;
     uint32_t d2d_exp_buf[NV11_2D_EXP_BUF_DWORDS];
+
+    /* SIFM (stretch blit) */
+    uint32_t d2d_sifm_fmt, d2d_sifm_clip_tl, d2d_sifm_clip_wh;
+    uint32_t d2d_sifm_dst, d2d_sifm_dst_wh;
+    uint32_t d2d_sifm_dudx, d2d_sifm_dvdy;
+    uint32_t d2d_sifm_src_wh, d2d_sifm_src_fmt, d2d_sifm_src_off;
+    uint32_t d2d_sifm_src_point;
+
+    /* M2MF */
+    uint32_t d2d_m2mf_in, d2d_m2mf_out;
+    uint32_t d2d_m2mf_off_in, d2d_m2mf_off_out;
+    uint32_t d2d_m2mf_pitch_in, d2d_m2mf_pitch_out;
+    uint32_t d2d_m2mf_len, d2d_m2mf_lines, d2d_m2mf_fmt;
+    uint32_t d2d_m2mf_notify;
 
     /* Hardware cursor (head 0) */
     uint32_t cur_pos;           /* NV_PRAMDAC_CU_START_POS: (Y<<16)|X */
@@ -383,6 +499,12 @@ void nv11_ptimer_write(NV11State *s, hwaddr offset, uint64_t val,
 void nv11_2d_init(NV11State *s);
 void nv11_2d_reset(NV11State *s);
 void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val);
+uint32_t nv11_fifo_dma_frame(NV11State *s, uint32_t handle);
+
+void nv11_i2c_init(NV11State *s);
+void nv11_i2c_reset(NV11State *s);
+void nv11_ddc_drive(NV11State *s, int bus, uint8_t value);
+uint8_t nv11_ddc_sense(NV11State *s, int bus);
 
 uint64_t nv11_bar0_read(NV11State *s, hwaddr offset, unsigned size);
 void nv11_bar0_write(NV11State *s, hwaddr offset, uint64_t val,

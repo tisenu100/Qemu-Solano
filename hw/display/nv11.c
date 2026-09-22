@@ -57,6 +57,11 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
             val = NV11_PMC_BOOT_0_NV11;
             goto return_val;
         }
+        if (reg == NV11_PMC_INTR_HOST) {
+            /* No PMC interrupts pending on idle HW. */
+            val = 0;
+            goto return_val;
+        }
         goto flat_read;
     }
 
@@ -76,16 +81,29 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
         return nv11_ptimer_read(s, off - NV11_PTMR_OFF, size);
     }
 
+    if (off == NV11_PFIFO_RUNOUT_STATUS ||
+        off == NV11_PFIFO_CACHE0_STATUS ||
+        off == NV11_PFIFO_CACHE1_STATUS) {
+        /* Idle pusher: EMPTY set, RANOUT/FULL clear. */
+        val = NV11_PFIFO_STATUS_EMPTY;
+        if (size == 1) {
+            val = (val >> (8 * (off & 0x3))) & 0xFF;
+        } else if (size == 2) {
+            val = (val >> (8 * (off & 0x3))) & 0xFFFF;
+        }
+        goto return_val;
+    }
+
     if (off >= NV11_PFIFO_CACHE1_DMA_CTL &&
         off < NV11_PFIFO_CACHE1_DMA_CTL + 4) {
-        uint32_t fetch =
-            ldl_le_p((uint32_t *)(s->bar0_flat + NV11_PFIFO_CACHE1_DMA_FETCH));
-        val = ldl_le_p((uint32_t *)(s->bar0_flat +
-                                    NV11_PFIFO_CACHE1_DMA_CTL));
-        if (fetch != 0) {
-            /* DMA params latched: HW reports the context VALID.
-             * Same overlay pattern as PGRAPH STATUS busy bit. */
-            val |= NV11_PFIFO_DMA_CTL_VALID;
+        {
+            uint32_t flat = ldl_le_p((uint32_t *)(s->bar0_flat +
+                                                  NV11_PFIFO_CACHE1_DMA_CTL));
+            /* Card type. Some drivers might probe aperature with this:
+             * TARGET=PCI (0x20000), TARGET=AGP (0x30000).
+             */
+            val = (flat & ~0x00030000u) | 0x00020000u |
+                  NV11_PFIFO_DMA_CTL_VALID | 0x00003000u;
         }
         if (size == 1) {
             val = (val >> (8 * (off & 0x3))) & 0xFF;
@@ -244,6 +262,15 @@ flat_read:
 
 return_val:
     trace_nv11_bar0_read(eip, off, size);
+    if (off == NV11_PMC_INTR_HOST ||
+        off == NV11_PFIFO_CACHE1_STATUS ||
+        (off >= NV11_PFIFO_CACHE1_DMA_CTL &&
+         off < NV11_PFIFO_CACHE1_DMA_CTL + 4)) {
+        static uint32_t dbg_n;
+        if ((dbg_n++ % 200000) < 3) {
+            trace_nv11_bar0_read_val(eip, off, size, val);
+        }
+    }
     return val;
 }
 
@@ -340,6 +367,9 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
     if (off >= NV11_PCRTC1_OFF && off < NV11_PCRTC1_END) {
         uint32_t reg = off - NV11_PCRTC1_OFF;
         trace_nv11_pcrtc_write(eip, 1, reg, size, (uint32_t)val);
+        if (reg == NV11_PCRTC_CURSOR_CFG) {
+            s->cur_cfg = (uint32_t)val;
+        }
         goto flat_write;
     }
 
@@ -393,6 +423,9 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
         uint32_t idx = reg / 4;
         if (idx < sizeof(s->pramdac[1]) / sizeof(s->pramdac[1][0])) {
             s->pramdac[1][idx] = (uint32_t)val;
+        }
+        if (reg == NV11_PRAMDAC_CUR_POS) {
+            s->cur_pos = (uint32_t)val;
         }
         trace_nv11_pramdac_write(eip, 1, reg, size, (uint32_t)val);
         return;
@@ -496,6 +529,7 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     nv11_ptimer_init(s);
     nv11_fifo_init(s);
     nv11_2d_init(s);
+    nv11_i2c_init(s);
 
     pci_set_word(dev->config + PCI_COMMAND,
                  PCI_COMMAND_IO | PCI_COMMAND_MEMORY);
@@ -503,6 +537,10 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     pci_set_byte(dev->config + PCI_REVISION_ID, 0xB2);
     pci_set_byte(dev->config + PCI_INTERRUPT_PIN, 1);
 }
+
+static const Property nv11_properties[] = {
+    DEFINE_EDID_PROPERTIES(NV11State, edid_info),
+};
 
 static void nv11_class_init(ObjectClass *klass, const void *data)
 {
@@ -514,14 +552,26 @@ static void nv11_class_init(ObjectClass *klass, const void *data)
     k->device_id = PCI_DEVICE_ID_NVIDIA_NV11B;
     k->class_id  = PCI_CLASS_DISPLAY_VGA;
     dc->hotpluggable = false;
+    device_class_set_props(dc, nv11_properties);
     nv11_vga_class_reset(klass);
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
+}
+
+static void nv11_instance_init(Object *o)
+{
+    NV11State *s = NV11(o);
+
+    object_initialize_child(o, "ddc-a", &s->ddc[NV11_DDC_BUS_A],
+                            TYPE_I2CDDC);
+    object_initialize_child(o, "ddc-b", &s->ddc[NV11_DDC_BUS_B],
+                            TYPE_I2CDDC);
 }
 
 static const TypeInfo nv11_type_info = {
     .name          = TYPE_NV11,
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof(NV11State),
+    .instance_init = nv11_instance_init,
     .class_init    = nv11_class_init,
     .interfaces    = (const InterfaceInfo[]) {
         { INTERFACE_CONVENTIONAL_PCI_DEVICE },

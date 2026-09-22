@@ -77,7 +77,7 @@ static uint32_t nv11_fifo_shadow_read(NV11State *s, uint32_t chan, uint32_t reg,
     return val;
 }
 
-static uint8_t nv11_fifo_ramin_class(NV11State *s, uint32_t instance)
+static uint16_t nv11_fifo_ramin_class(NV11State *s, uint32_t instance)
 {
     uint32_t tab = NV11_RAMIN_INST_TABLE + ((instance & 0x7F) ^ 0x10) * 8;
     uint32_t obj;
@@ -91,7 +91,35 @@ static uint8_t nv11_fifo_ramin_class(NV11State *s, uint32_t instance)
         !ldl_le_p(s->bar0_flat + tab)) {
         return 0;
     }
-    return ldl_le_p(s->bar0_flat + tab) & 0xFF;
+    /* 9 bits: catches the 0x100 NOP / 0x104 NOTIFY objects whose low
+     * byte would otherwise collide with an unbound class. */
+    return ldl_le_p(s->bar0_flat + tab) & 0x1FF;
+}
+
+/*
+ * Resolve a context-style handle (e.g. a DMA_NOTIFY / DMA_BUFFER_IN /
+ * DMA_BUFFER_OUT reference) to the base address of the DMA object it names.
+ * The RAMIN instance table maps the handle to a word pointer, and the object
+ * at that pointer holds {flags, limit, address, term}. The classic in-memory
+ * FB map keep its address (frame) in dword[2]. Unknown handles yield 0,
+ * which on a real NV11 is the start of VRAM as well, so callers clamp.
+ */
+uint32_t nv11_fifo_dma_frame(NV11State *s, uint32_t handle)
+{
+    uint32_t inst = handle & 0x7F;
+    uint32_t tab = NV11_RAMIN_INST_TABLE + ((inst ^ 0x10) * 8);
+    uint32_t obj, base;
+
+    if (tab + 8 > NV11_BAR0_SIZE) {
+        return 0;
+    }
+    obj = ldl_le_p(s->bar0_flat + tab + 4) & 0x7FFF;
+    base = NV11_RAMIN_OBJ_BASE + (obj << 4);
+    if (base + 12 > NV11_BAR0_SIZE ||
+        !ldl_le_p(s->bar0_flat + base)) {
+        return 0;
+    }
+    return ldl_le_p(s->bar0_flat + base + 8) & 0xFFFFF000;
 }
 
 static void nv11_fifo_drain(void *opaque)
@@ -137,6 +165,24 @@ static void nv11_fifo_dma_push(NV11State *s, uint32_t chan, uint32_t put)
     uint32_t i;
 
     trace_nv11_fifo_dma_push(eip, chan, put, ring_base, get);
+
+    /* Raw ring peek: tells empty-ring (BAR1 coherency) apart from
+     * header-decode mismatch. Throttled like the drain timer path. */
+    {
+        static uint32_t dbg_n;
+        if ((dbg_n++ % 25) == 0) {
+            uint32_t g = get;
+            uint32_t d[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+            for (i = 0; g != putm && i < 8; i++) {
+                d[i] = nv11_vram_read_dword(s, ring_base + g);
+                g = (g + 4) & NV11_DMA_RING_MASK;
+            }
+            trace_nv11_fifo_dma_ring0(eip, chan, get, putm,
+                                      d[0], d[1], d[2], d[3]);
+            trace_nv11_fifo_dma_ring1(eip, chan,
+                                      d[4], d[5], d[6], d[7]);
+        }
+    }
 
     /* DMA_GET/DMA_PUT are byte offsets relative to the ring base and wrap
      * modulo the ring size. */

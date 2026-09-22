@@ -220,6 +220,7 @@ apple_gfx_display_mode(uint32_t mode_idx, uint16_t width_px, uint16_t height_px)
 # nv11.c
 nv11_bar0_read(uint32_t eip, uint32_t addr, unsigned size) "NV11: [BAR0] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
 nv11_bar0_write(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [BAR0] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+nv11_bar0_read_val(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [BAR0] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes) = 0x%"PRIx32
 
 # nv11_pbus.c
 nv11_pbus_read(uint32_t eip, uint32_t reg, unsigned size) "NV11: [PBUS] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
@@ -271,6 +272,8 @@ nv11_fifo_write(uint32_t eip, uint32_t off, unsigned size, uint32_t val) "NV11: 
 nv11_fifo_context(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u context <- 0x%"PRIx32
 nv11_fifo_dma_get(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA_GET -> 0x%"PRIx32
 nv11_fifo_dma_push(uint32_t eip, uint32_t chan, uint32_t put, uint32_t base, uint32_t get) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA_PUT 0x%"PRIx32" ring@0x%"PRIx32" get=0x%"PRIx32
+nv11_fifo_dma_ring0(uint32_t eip, uint32_t chan, uint32_t get, uint32_t put, uint32_t d0, uint32_t d1, uint32_t d2, uint32_t d3) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA ring get=0x%"PRIx32" put=0x%"PRIx32": 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_fifo_dma_ring1(uint32_t eip, uint32_t chan, uint32_t d4, uint32_t d5, uint32_t d6, uint32_t d7) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA ring cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
 nv11_fifo_dma_method(uint32_t eip, uint32_t chan, uint32_t reg, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA method 0x%"PRIx32" <- 0x%"PRIx32
 nv11_fifo_dma_bind(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA bind <- 0x%"PRIx32
 nv11_fifo_dma_idle(uint32_t eip, uint32_t chan, uint32_t get) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA idle get=0x%"PRIx32
@@ -299,7 +302,15 @@ nv11_2d_fill(uint32_t eip, int x, int y, int w, int h, int bpp, uint32_t rop) "N
 nv11_2d_blit(uint32_t eip, int sx, int sy, int dx, int dy, int w, int h) "NV11: [2D] [eip=0x%"PRIx32"] blit (%d,%d)->(%d,%d) %dx%d"
 nv11_2d_expand(uint32_t eip, int x, int y, int w, int h, int opaque) "NV11: [2D] [eip=0x%"PRIx32"] expand %d,%d %dx%d opaque=%d"
 nv11_2d_line(uint32_t eip, int x0, int y0, int x1, int y1, uint32_t color) "NV11: [2D] [eip=0x%"PRIx32"] line (%d,%d)-(%d,%d) color=0x%"PRIx32
+nv11_2d_sifm(uint32_t eip, int dx, int dy, int w, int h, int sw, int sh, uint32_t fmt) "NV11: [2D] [eip=0x%"PRIx32"] sifm (%d,%d) %dx%d <- %dx%d fmt=0x%"PRIx32
+nv11_2d_m2mf(uint32_t eip, uint32_t src, uint32_t dst, uint32_t len, uint32_t lines, uint32_t psin, uint32_t psout) "NV11: [2D] [eip=0x%"PRIx32"] m2mf 0x%"PRIx32"->0x%"PRIx32" %u x %u bytes (pitches %u/%u)"
+nv11_2d_notify(uint32_t eip, uint32_t addr) "NV11: [2D] [eip=0x%"PRIx32"] notify completion @0x%"PRIx32
 nv11_cur_state(uint32_t eip, uint32_t img, int x, int y, uint32_t cfg, int en) "NV11: [CUR] [eip=0x%"PRIx32"] img=0x%"PRIx32" pos=(%d,%d) cfg=0x%"PRIx32" en=%d"
+
+# nv11_i2c.c
+nv11_i2c_init(void) "NV11: [I2C] init"
+nv11_i2c_drive(uint32_t eip, int bus, uint8_t val, bool scl, bool sda) "NV11: [I2C] [eip=0x%"PRIx32"] bus=%d drive=0x%02x scl=%d sda=%d"
+nv11_i2c_sense(uint32_t eip, int bus, uint8_t val) "NV11: [I2C] [eip=0x%"PRIx32"] bus=%d sense=0x%02x"
 
 # apple-gfx-mmio.m
 apple_gfx_mmio_iosfc_read(uint64_t offset, uint64_t res) "offset=0x%"PRIx64" res=0x%"PRIx64
