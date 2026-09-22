@@ -148,6 +148,7 @@
 
 /* PGRAPH registers (within 0x1000 block, BAR0 0x400000) */
 #define NV11_PGRAPH_INTR         0x000100
+#define NV11_PGRAPH_INTR_CONTEXT_SWITCH (1 << 12)  /* bit12: ctx switch done */
 #define NV11_PGRAPH_INTR_EN      0x000140
 #define NV11_PGRAPH_STATUS       0x000700   /* bit0 = busy */
 #define NV11_PGRAPH_CTX_CTRL     0x000710
@@ -429,6 +430,7 @@ typedef struct NV11State {
 
     /* PGRAPH */
     uint32_t pgraph_scratch[(NV11_PGRAPH_END - NV11_PGRAPH_OFF) / 4];
+    uint32_t pgraph_intr;    /* PGRAPH[0x100] pending interrupt status (W1C) */
     bool     pgraph_busy;    /* PGRAPH[0x700] bit0, set on FIFO method write */
 
     /* FIFO window drain timer */
@@ -516,6 +518,7 @@ void nv11_pgraph_reset(NV11State *s);
 uint64_t nv11_pgraph_read(NV11State *s, hwaddr offset, unsigned size);
 void nv11_pgraph_write(NV11State *s, hwaddr offset, uint64_t val,
                        unsigned size);
+void nv11_pgraph_notify_cs(NV11State *s);
 void nv11_ptimer_init(NV11State *s);
 void nv11_ptimer_reset(NV11State *s);
 uint64_t nv11_ptimer_read(NV11State *s, hwaddr offset, unsigned size);

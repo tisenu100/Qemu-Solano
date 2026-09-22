@@ -50,7 +50,12 @@ uint64_t nv11_pgraph_read(NV11State *s, hwaddr offset, unsigned size)
         return 0;
     }
 
-    val = s->pgraph_scratch[idx];
+    if (reg == NV11_PGRAPH_INTR) {
+        val = s->pgraph_intr;
+        trace_nv11_pgraph_intr(eip, val);
+    } else {
+        val = s->pgraph_scratch[idx];
+    }
 
     if (reg == NV11_PGRAPH_STATUS) {
         /* bit0 = Busy: set when FIFO methods are queued, cleared on drain */
@@ -96,6 +101,42 @@ void nv11_pgraph_write(NV11State *s, hwaddr offset, uint64_t val, unsigned size)
         return;
     }
 
+    /* NV03_PGRAPH_INTR is a write-1-to-clear status register: a write of a
+     * bit acknowledgement clears the pending bit; zeros leave it set. The
+     * driver acks the context-switch interrupt with 0x1000 after handling it,
+     * so the bit must clear, otherwise the ack is read back pending forever
+     * and the driver spins. */
+    if (reg == NV11_PGRAPH_INTR) {
+        uint32_t mask;
+
+        switch (size) {
+        case 1:
+            mask = ((uint32_t)val & 0xFFu) << (8 * (reg % 4));
+            break;
+        case 2:
+            mask = ((uint32_t)val & 0xFFFFu) << (8 * (reg % 4));
+            break;
+        case 4:
+            mask = (uint32_t)val;
+            break;
+        default:
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "NV11: [PGRAPH] bad INTR ack size %u at 0x%x\n",
+                          size, reg);
+            return;
+        }
+
+        s->pgraph_intr &= ~mask;
+        trace_nv11_pgraph_intr_clear(eip, (uint32_t)val, s->pgraph_intr);
+        return;
+    }
+
+    /* FIFO kick (bit0=1): the pusher fetches the queued methods and performs
+     * a context switch once they are consumed. */
+    if (reg == NV11_PGRAPH_FIFO && size == 4 && (val & 1)) {
+        nv11_pgraph_notify_cs(s);
+    }
+
     switch (size) {
     case 1:
         s->pgraph_scratch[idx] &= ~(0xFFu << (8 * (reg % 4)));
@@ -118,7 +159,16 @@ void nv11_pgraph_write(NV11State *s, hwaddr offset, uint64_t val, unsigned size)
 void nv11_pgraph_reset(NV11State *s)
 {
     memset(s->pgraph_scratch, 0, sizeof(s->pgraph_scratch));
+    s->pgraph_intr = 0;
     s->pgraph_busy = false;
+}
+
+void nv11_pgraph_notify_cs(NV11State *s)
+{
+    uint32_t eip = nv11_get_eip();
+
+    s->pgraph_intr |= NV11_PGRAPH_INTR_CONTEXT_SWITCH;
+    trace_nv11_pgraph_intr_cs(eip);
 }
 
 void nv11_pgraph_init(NV11State *s)

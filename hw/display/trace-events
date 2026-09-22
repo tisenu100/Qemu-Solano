@@ -290,6 +290,9 @@ nv11_pgraph_read(uint32_t eip, uint32_t reg, unsigned size) "NV11: [PGRAPH] [eip
 nv11_pgraph_write(uint32_t eip, uint32_t reg, unsigned size, uint32_t val) "NV11: [PGRAPH] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
 nv11_pgraph_status(uint32_t eip, int busy) "NV11: [PGRAPH] [eip=0x%"PRIx32"] status busy=%d"
 nv11_pgraph_idle(uint32_t eip) "NV11: [PGRAPH] [eip=0x%"PRIx32"] BUSY cleared (engine idle)"
+nv11_pgraph_intr(uint32_t eip, uint32_t intr) "NV11: [PGRAPH] [eip=0x%"PRIx32"] intr=0x%"PRIx32
+nv11_pgraph_intr_clear(uint32_t eip, uint32_t val, uint32_t intr) "NV11: [PGRAPH] [eip=0x%"PRIx32"] ack 0x%"PRIx32" -> intr=0x%"PRIx32
+nv11_pgraph_intr_cs(uint32_t eip) "NV11: [PGRAPH] [eip=0x%"PRIx32"] context-switch interrupt raised"
 
 # nv11_ptimer.c
 nv11_ptimer_init(void) "NV11: [PTIMER] init"
