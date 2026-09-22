@@ -214,22 +214,12 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
     }
 
     if (off >= NV11_PRAMDAC0_OFF && off < NV11_PRAMDAC0_END) {
-        uint32_t reg = off - NV11_PRAMDAC0_OFF;
-        uint32_t idx = reg / 4;
-        trace_nv11_pramdac_read(eip, 0, reg, size);
-        if (idx < sizeof(s->pramdac[0]) / sizeof(s->pramdac[0][0])) {
-            val = s->pramdac[0][idx];
-        }
+        val = nv11_pramdac_read(s, 0, off - NV11_PRAMDAC0_OFF, size);
         goto return_val;
     }
 
     if (off >= NV11_PRAMDAC1_OFF && off < NV11_PRAMDAC1_END) {
-        uint32_t reg = off - NV11_PRAMDAC1_OFF;
-        uint32_t idx = reg / 4;
-        trace_nv11_pramdac_read(eip, 1, reg, size);
-        if (idx < sizeof(s->pramdac[1]) / sizeof(s->pramdac[1][0])) {
-            val = s->pramdac[1][idx];
-        }
+        val = nv11_pramdac_read(s, 1, off - NV11_PRAMDAC1_OFF, size);
         goto return_val;
     }
 
@@ -406,28 +396,12 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
     }
 
     if (off >= NV11_PRAMDAC0_OFF && off < NV11_PRAMDAC0_END) {
-        uint32_t reg = off - NV11_PRAMDAC0_OFF;
-        uint32_t idx = reg / 4;
-        if (idx < sizeof(s->pramdac[0]) / sizeof(s->pramdac[0][0])) {
-            s->pramdac[0][idx] = (uint32_t)val;
-        }
-        if (reg == NV11_PRAMDAC_CUR_POS) {
-            s->cur_pos = (uint32_t)val;
-        }
-        trace_nv11_pramdac_write(eip, 0, reg, size, (uint32_t)val);
+        nv11_pramdac_write(s, 0, off - NV11_PRAMDAC0_OFF, val, size);
         return;
     }
 
     if (off >= NV11_PRAMDAC1_OFF && off < NV11_PRAMDAC1_END) {
-        uint32_t reg = off - NV11_PRAMDAC1_OFF;
-        uint32_t idx = reg / 4;
-        if (idx < sizeof(s->pramdac[1]) / sizeof(s->pramdac[1][0])) {
-            s->pramdac[1][idx] = (uint32_t)val;
-        }
-        if (reg == NV11_PRAMDAC_CUR_POS) {
-            s->cur_pos = (uint32_t)val;
-        }
-        trace_nv11_pramdac_write(eip, 1, reg, size, (uint32_t)val);
+        nv11_pramdac_write(s, 1, off - NV11_PRAMDAC1_OFF, val, size);
         return;
     }
 

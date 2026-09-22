@@ -100,7 +100,12 @@
 #define NV11_PRAMDAC_MPLL        0x000504
 #define NV11_PRAMDAC_VPLL        0x000508
 #define NV11_PRAMDAC_PLL_SEL     0x00050C
+#define NV11_PRAMDAC_PLL_SETUP   0x000510
 #define NV11_PRAMDAC_VPLL2       0x000520
+#define NV11_PRAMDAC_SEL_CLK     0x000524
+#define NV11_PRAMDAC_DITHER      0x000528
+#define NV11_PRAMDAC_DACCLK      0x00052C
+#define NV11_PRAMDAC_580         0x000580
 #define NV11_PRAMDAC_GEN_CTL     0x000600
 #define NV11_PRAMDAC_TEST_CTL    0x000608
 #define NV11_PRAMDAC_TESTPOINT   0x000610
@@ -113,6 +118,21 @@
 #define NV11_PRAMDAC_FP_DBG0     0x000880
 #define NV11_PRAMDAC_FP_DBG1     0x000884
 #define NV11_PRAMDAC_FP_DBG2     0x000888
+
+/*
+ * PLL Configuration
+ */
+#define NV11_PLL_M1_SHIFT        0
+#define NV11_PLL_M1_MASK         0x000000FFu
+#define NV11_PLL_N1_SHIFT        8
+#define NV11_PLL_N1_MASK         0x0000FF00u
+#define NV11_PLL_P_SHIFT         16
+#define NV11_PLL_P_MASK          0x00070000u
+
+#define NV11_PRAMDAC_PLL_SEL_USE_VPLL2  (1 << 0)
+#define NV11_PRAMDAC_PLL_SEL_SRC_MPLL   (1 << 8)
+#define NV11_PRAMDAC_PLL_SEL_SRC_VPLL   (2 << 8)
+#define NV11_PRAMDAC_PLL_SEL_SRC_NVPLL  (4 << 8)
 
 /* PEXTDEV registers (within 0x1000 block) */
 #define NV11_PEXTDEV_BOOT_0      0x000000
@@ -323,6 +343,7 @@
 #define NV11_CRTC_HCUR_ADDR1     0x31   /* image addr bits 10-2, bit0 = ENABLE */
 #define NV11_CRTC_HCUR_ADDR2     0x2F   /* image addr bits 31-24 */
 #define NV11_PRAMDAC_CUR_POS     0x300  /* (Y<<16)|X cursor position */
+#define NV11_PRAMDAC_CURSYNC     0x404  /* NV10 cursor sync/control */
 #define NV11_PCRTC_CURSOR_CFG    0x810  /* 64x64 ARGB cursor configuration */
 
 /* DDC / I2C. NV11 exposes one bit-banged DDC port through extended CRTC
@@ -471,6 +492,11 @@ uint8_t nv11_pcrtc_read(NV11State *s, uint8_t index);
 void nv11_pcrtc_write(NV11State *s, uint8_t index, uint8_t value);
 void nv11_pbus_init(NV11State *s);
 void nv11_pramdac_init(NV11State *s);
+void nv11_pramdac_reset(NV11State *s);
+uint64_t nv11_pramdac_read(NV11State *s, int head, hwaddr offset,
+                           unsigned size);
+void nv11_pramdac_write(NV11State *s, int head, hwaddr offset,
+                        uint64_t val, unsigned size);
 void nv11_vga_init(NV11State *s, PCIDevice *dev, Error **errp);
 void nv11_vga_class_reset(ObjectClass *klass);
 int nv11_get_bpp(VGACommonState *s);

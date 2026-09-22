@@ -264,6 +264,7 @@ static void nv11_vga_reset(DeviceState *dev)
 {
     NV11State *s = NV11(dev);
     vga_common_reset(&s->vga);
+    nv11_pramdac_reset(s);
     nv11_pgraph_reset(s);
     nv11_fifo_reset(s);
     nv11_i2c_reset(s);
