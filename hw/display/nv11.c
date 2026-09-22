@@ -57,6 +57,11 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
             val = NV11_PMC_BOOT_0_NV11;
             goto return_val;
         }
+        if (reg == NV11_PMC_INTR_HOST) {
+            /* No PMC interrupts pending on idle HW. */
+            val = 0;
+            goto return_val;
+        }
         goto flat_read;
     }
 
@@ -76,16 +81,29 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
         return nv11_ptimer_read(s, off - NV11_PTMR_OFF, size);
     }
 
+    if (off == NV11_PFIFO_RUNOUT_STATUS ||
+        off == NV11_PFIFO_CACHE0_STATUS ||
+        off == NV11_PFIFO_CACHE1_STATUS) {
+        /* Idle pusher: EMPTY set, RANOUT/FULL clear. */
+        val = NV11_PFIFO_STATUS_EMPTY;
+        if (size == 1) {
+            val = (val >> (8 * (off & 0x3))) & 0xFF;
+        } else if (size == 2) {
+            val = (val >> (8 * (off & 0x3))) & 0xFFFF;
+        }
+        goto return_val;
+    }
+
     if (off >= NV11_PFIFO_CACHE1_DMA_CTL &&
         off < NV11_PFIFO_CACHE1_DMA_CTL + 4) {
-        uint32_t fetch =
-            ldl_le_p((uint32_t *)(s->bar0_flat + NV11_PFIFO_CACHE1_DMA_FETCH));
-        val = ldl_le_p((uint32_t *)(s->bar0_flat +
-                                    NV11_PFIFO_CACHE1_DMA_CTL));
-        if (fetch != 0) {
-            /* DMA params latched: HW reports the context VALID.
-             * Same overlay pattern as PGRAPH STATUS busy bit. */
-            val |= NV11_PFIFO_DMA_CTL_VALID;
+        {
+            uint32_t flat = ldl_le_p((uint32_t *)(s->bar0_flat +
+                                                  NV11_PFIFO_CACHE1_DMA_CTL));
+            /* Card type. Some drivers might probe aperature with this:
+             * TARGET=PCI (0x20000), TARGET=AGP (0x30000).
+             */
+            val = (flat & ~0x00030000u) | 0x00020000u |
+                  NV11_PFIFO_DMA_CTL_VALID | 0x00003000u;
         }
         if (size == 1) {
             val = (val >> (8 * (off & 0x3))) & 0xFF;
@@ -244,6 +262,15 @@ flat_read:
 
 return_val:
     trace_nv11_bar0_read(eip, off, size);
+    if (off == NV11_PMC_INTR_HOST ||
+        off == NV11_PFIFO_CACHE1_STATUS ||
+        (off >= NV11_PFIFO_CACHE1_DMA_CTL &&
+         off < NV11_PFIFO_CACHE1_DMA_CTL + 4)) {
+        static uint32_t dbg_n;
+        if ((dbg_n++ % 200000) < 3) {
+            trace_nv11_bar0_read_val(eip, off, size, val);
+        }
+    }
     return val;
 }
 

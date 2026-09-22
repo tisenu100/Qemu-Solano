@@ -166,6 +166,24 @@ static void nv11_fifo_dma_push(NV11State *s, uint32_t chan, uint32_t put)
 
     trace_nv11_fifo_dma_push(eip, chan, put, ring_base, get);
 
+    /* Raw ring peek: tells empty-ring (BAR1 coherency) apart from
+     * header-decode mismatch. Throttled like the drain timer path. */
+    {
+        static uint32_t dbg_n;
+        if ((dbg_n++ % 25) == 0) {
+            uint32_t g = get;
+            uint32_t d[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+            for (i = 0; g != putm && i < 8; i++) {
+                d[i] = nv11_vram_read_dword(s, ring_base + g);
+                g = (g + 4) & NV11_DMA_RING_MASK;
+            }
+            trace_nv11_fifo_dma_ring0(eip, chan, get, putm,
+                                      d[0], d[1], d[2], d[3]);
+            trace_nv11_fifo_dma_ring1(eip, chan,
+                                      d[4], d[5], d[6], d[7]);
+        }
+    }
+
     /* DMA_GET/DMA_PUT are byte offsets relative to the ring base and wrap
      * modulo the ring size. */
     for (i = 0; get != putm && i < NV11_DMA_RING_SIZE / 4; i++) {

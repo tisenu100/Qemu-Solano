@@ -37,7 +37,7 @@
 
 /* BAR sizes */
 #define NV11_BAR0_SIZE           0x1000000   /* 16 MB */
-#define NV11_BAR1_VRAM_SIZE      0x0400000   /* 64 MB (Needs work for 32MB variants some day) */
+#define NV11_BAR1_VRAM_SIZE      0x4000000   /* 64 MB (Needs work for 32MB variants some day) */
 #define NV11_BAR1_VRAM_SIZE_MB   64
 #define NV11_ROM_SIZE            0x010000    /* 64 KB */
 
@@ -132,6 +132,16 @@
 #define NV11_PGRAPH_STATUS       0x000700   /* bit0 = busy */
 #define NV11_PGRAPH_CTX_CTRL     0x000710
 #define NV11_PGRAPH_FIFO         0x000720   /* bit0 = fifo enable */
+
+/* PMC */
+#define NV11_PMC_INTR_HOST                   0x000100   /* no pending IRQs = 0 */
+
+/* PFIFO */
+#define NV11_PFIFO_RUNOUT_STATUS             0x002400
+#define NV11_PFIFO_CACHES                    0x002500
+#define NV11_PFIFO_CACHE0_STATUS             0x003014
+#define NV11_PFIFO_CACHE1_STATUS             0x003214
+#define NV11_PFIFO_STATUS_EMPTY              0x00000010u /* EMPTY bit, RANOUT=0 */
 
 /* PFIFO CACHE1 DMA context */
 #define NV11_PFIFO_CACHE1_DMA_FETCH          0x003224

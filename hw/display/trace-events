@@ -220,6 +220,7 @@ apple_gfx_display_mode(uint32_t mode_idx, uint16_t width_px, uint16_t height_px)
 # nv11.c
 nv11_bar0_read(uint32_t eip, uint32_t addr, unsigned size) "NV11: [BAR0] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
 nv11_bar0_write(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [BAR0] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
+nv11_bar0_read_val(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [BAR0] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes) = 0x%"PRIx32
 
 # nv11_pbus.c
 nv11_pbus_read(uint32_t eip, uint32_t reg, unsigned size) "NV11: [PBUS] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
@@ -271,6 +272,8 @@ nv11_fifo_write(uint32_t eip, uint32_t off, unsigned size, uint32_t val) "NV11: 
 nv11_fifo_context(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u context <- 0x%"PRIx32
 nv11_fifo_dma_get(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA_GET -> 0x%"PRIx32
 nv11_fifo_dma_push(uint32_t eip, uint32_t chan, uint32_t put, uint32_t base, uint32_t get) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA_PUT 0x%"PRIx32" ring@0x%"PRIx32" get=0x%"PRIx32
+nv11_fifo_dma_ring0(uint32_t eip, uint32_t chan, uint32_t get, uint32_t put, uint32_t d0, uint32_t d1, uint32_t d2, uint32_t d3) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA ring get=0x%"PRIx32" put=0x%"PRIx32": 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_fifo_dma_ring1(uint32_t eip, uint32_t chan, uint32_t d4, uint32_t d5, uint32_t d6, uint32_t d7) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA ring cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
 nv11_fifo_dma_method(uint32_t eip, uint32_t chan, uint32_t reg, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA method 0x%"PRIx32" <- 0x%"PRIx32
 nv11_fifo_dma_bind(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA bind <- 0x%"PRIx32
 nv11_fifo_dma_idle(uint32_t eip, uint32_t chan, uint32_t get) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA idle get=0x%"PRIx32
