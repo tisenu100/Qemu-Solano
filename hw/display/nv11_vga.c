@@ -76,11 +76,28 @@ void nv11_get_params(VGACommonState *s, VGADisplayParams *params)
 
 void nv11_get_resolution(VGACommonState *s, int *pwidth, int *pheight)
 {
-    *pwidth = (s->cr[VGA_CRTC_H_DISP] + 1) * 8;
-    *pheight = s->cr[VGA_CRTC_V_DISP_END] |
+    NV11State *n = container_of(s, NV11State, vga);
+    int width_chars = s->cr[VGA_CRTC_H_DISP] + 1;
+    int height = s->cr[VGA_CRTC_V_DISP_END] |
         ((s->cr[VGA_CRTC_OVERFLOW] & 0x02) << 7) |
         ((s->cr[VGA_CRTC_OVERFLOW] & 0x40) << 3);
-    *pheight = (*pheight + 1);
+
+    /* NV extended overflow:
+     * CRTC 0x2D bit1 = horizDisplay bit8, CRTC 0x25 bit1 =
+     * vertDisplay bit10, CRTC 0x41 bit2 = vertDisplay bit11.
+     * Without these any mode taller than 1024 is truncated. */
+    if (n->nv_crtc_reg[0x2D] & 0x02) {
+        width_chars += 0x100;
+    }
+    if (n->nv_crtc_reg[0x25] & 0x02) {
+        height |= 0x400;
+    }
+    if (n->nv_crtc_reg[0x41] & 0x04) {
+        height |= 0x800;
+    }
+
+    *pwidth = width_chars * 8;
+    *pheight = height + 1;
 }
 
 static uint32_t nv11_cursor_blend(uint32_t fg, uint32_t bg)
