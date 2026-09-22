@@ -139,6 +139,7 @@ static void nv11_fifo_drain(void *opaque)
     if (s->pgraph_busy) {
         s->pgraph_busy = false;
         trace_nv11_pgraph_idle(eip);
+        nv11_pgraph_notify_cs(s);
     }
 }
 

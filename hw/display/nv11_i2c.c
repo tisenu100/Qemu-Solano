@@ -51,6 +51,12 @@ static const char *const nv11_ddc_bus_name[NV11_DDC_BUSES] = {
     "nv11.ddc-b",
 };
 
+/* Dynamic Monitor Control */
+static const bool nv11_ddc_bus_has_monitor[NV11_DDC_BUSES] = {
+    [NV11_DDC_BUS_A] = true,
+    [NV11_DDC_BUS_B] = false,
+};
+
 static void nv11_i2c_bus_reset(NV11State *s, int bus)
 {
     bitbang_i2c_interface *i2c = &s->bbi2c[bus];
@@ -78,30 +84,37 @@ void nv11_i2c_init(NV11State *s)
         bitbang_i2c_init(&s->bbi2c[i], bus);
         nv11_i2c_bus_reset(s, i);
 
-        /* Both connectors are wired to the same monitor. Regenerate the
+        if (!nv11_ddc_bus_has_monitor[i]) {
+            /* No monitor: the bus stays empty, so DDC probes at 0x50 get
+             * a NACK and the driver reports the connector as not having a
+             * monitor attached. */
+            continue;
+        }
+
+        /* The connector is wired to a monitor. Regenerate the
          * EDID here so the device properties (set before realize) apply. */
-        qemu_edid_generate(s->ddc[i].edid_blob,
-                           sizeof(s->ddc[i].edid_blob), &s->edid_info);
+        qemu_edid_generate(s->ddc.edid_blob,
+                           sizeof(s->ddc.edid_blob), &s->edid_info);
 
         /* QEMU's EDID code generates us a DFP panel configuration
          * The Geforce 2 is way too old for such adaptation. So instead
          * force a VGA EDID 1.3 configuration matching the period accuracy
-         * 
+         *
          * 0x08 = analog, 0.7Vpp, separate syncs. Then fix block checksum. */
-        s->ddc[i].edid_blob[20] = 0x08;
+        s->ddc.edid_blob[20] = 0x08;
         uint8_t sum = 0;
-    
-        if (s->ddc[i].edid_blob[19] == 4) {
-            s->ddc[i].edid_blob[19] = 3;
+
+        if (s->ddc.edid_blob[19] == 4) {
+            s->ddc.edid_blob[19] = 3;
         }
 
         for (int j = 0; j < 127; j++) {
-            sum += s->ddc[i].edid_blob[j];
+            sum += s->ddc.edid_blob[j];
         }
-        s->ddc[i].edid_blob[127] = (uint8_t)(0x100 - sum);
+        s->ddc.edid_blob[127] = (uint8_t)(0x100 - sum);
 
-        i2c_slave_set_address(I2C_SLAVE(&s->ddc[i]), NV11_DDC_SLAVE_ADDR);
-        qdev_realize(DEVICE(&s->ddc[i]), BUS(bus), &error_abort);
+        i2c_slave_set_address(I2C_SLAVE(&s->ddc), NV11_DDC_SLAVE_ADDR);
+        qdev_realize(DEVICE(&s->ddc), BUS(bus), &error_abort);
     }
 
     trace_nv11_i2c_init();
