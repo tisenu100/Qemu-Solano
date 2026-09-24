@@ -47,17 +47,41 @@ int nv11_get_bpp(VGACommonState *s)
 
 void nv11_get_params(VGACommonState *s, VGADisplayParams *params)
 {
+    NV11State *n = container_of(s, NV11State, vga);
     int bpp, width;
 
     bpp = nv11_get_bpp(s);
     if (bpp) {
-        /* NV Desktop Mode: the scanout pitch is the width*depth product
-         * (matches state->repaint0 in the X driver) and the base address
-         * is the standard VGA display start. */
+        /* NV Desktop Mode: the scanout pitch lives in CR13 + extensions
+         * (CR19[7:5] = pitch/8 bits 10:8, CR42[6] = pitch/8 bit 11).
+         * It is *not* width*bpp/8: the framebuffer may be wider than
+         * the scanout (e.g. 1920-byte pitch showing 800px), so delivering
+         * pitch from width skews every line on width changes.
+         * Base is PCRTC START (byte address), not VGA CR0C/0D. */
+        uint32_t pitch8, pcrtc_start;
+
         width = (s->cr[VGA_CRTC_H_DISP] + 1) * 8;
-        params->line_offset = (width * bpp) / 8;
-        params->start_addr = s->cr[VGA_CRTC_START_LO] |
-            (s->cr[VGA_CRTC_START_HI] << 8);
+        if (n->nv_crtc_reg[0x2D] & 0x02) {
+            width += 0x100 * 8;
+        }
+        pitch8 = (uint32_t)s->cr[VGA_CRTC_OFFSET] |
+                 (((uint32_t)n->nv_crtc_reg[0x19] >> 5 & 0x7) << 8) |
+                 (((uint32_t)n->nv_crtc_reg[0x42] >> 6 & 0x1) << 11);
+        if (pitch8 == 0 ||
+            pitch8 * 8u < (uint32_t)(width * bpp) / 8u) {
+            /* Not programmed yet: fall back. */
+            params->line_offset = (width * bpp) / 8;
+        } else {
+            params->line_offset = pitch8 * 8u;
+        }
+        pcrtc_start =
+            ldl_le_p(n->bar0_flat + NV11_PCRTC0_OFF + 0x800);
+        if (pcrtc_start + 4u <= (uint32_t)s->vram_size) {
+            params->start_addr = pcrtc_start >> 2;
+        } else {
+            params->start_addr = s->cr[VGA_CRTC_START_LO] |
+                (s->cr[VGA_CRTC_START_HI] << 8);
+        }
         params->line_compare = 0xffff;
         params->hpel = 8; /* VGA_HPEL_NEUTRAL */
         params->hpel_split = false;
@@ -268,6 +292,11 @@ static void nv11_vga_reset(DeviceState *dev)
     nv11_pgraph_reset(s);
     nv11_fifo_reset(s);
     nv11_i2c_reset(s);
+    /* Clear PCRTC VBLANK latches so a stale retrace does not fake the
+     * next mode probe; the 60Hz timer re-sets them. */
+    stl_le_p(s->bar0_flat + NV11_PCRTC0_OFF + NV11_PCRTC_INTR, 0);
+    stl_le_p(s->bar0_flat + NV11_PCRTC1_OFF + NV11_PCRTC_INTR, 0);
+    nv11_update_irq(s);
 }
 
 void nv11_vga_class_reset(ObjectClass *klass)

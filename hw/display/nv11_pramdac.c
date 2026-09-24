@@ -79,7 +79,7 @@ uint64_t nv11_pramdac_read(NV11State *s, int head, hwaddr offset, unsigned size)
         return 0;
     }
 
-    trace_nv11_pramdac_read(eip, head, reg, size);
+    trace_nv11_pramdac_read(eip, head, reg, size, val);
     return val;
 }
 
@@ -144,7 +144,7 @@ void nv11_pramdac_reset(NV11State *s)
     memset(s->pramdac, 0, sizeof(s->pramdac));
 
     /*
-     * Plausible single-stage PLL defaults so the driver's first read-back
+     * Plausible single-stage PLL defaults so some drivers first read-back
      * is never garbage: NVPLL/MPLL/VPLL/VPLL2 all get M1=1 with a sane N1,
      * and PLL_SEL routes head 0 to the NVPLL (VGA/analog CRT).
      */
@@ -155,6 +155,12 @@ void nv11_pramdac_reset(NV11State *s)
         s->pramdac[head][NV11_PRAMDAC_VPLL2 / 4] = 0x00000A01;
         s->pramdac[head][NV11_PRAMDAC_PLL_SEL / 4] =
             NV11_PRAMDAC_PLL_SEL_SRC_NVPLL;
+        /* General control: the VBIOS POST leaves the analog CRT path
+         * enabled (PIXMIX on, VGA state selected, 8-bit DAC).  nvcore reads
+         * 0x680600 dozens of times but never writes it; a 0 read-back would
+         * make it believe no output path exists and stall the mode-set. */
+        s->pramdac[head][NV11_PRAMDAC_GEN_CTL / 4] =
+            NV11_PRAMDAC_GEN_CTL_CRT_ON;
     }
 
     s->cur_pos = 0;

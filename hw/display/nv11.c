@@ -45,6 +45,56 @@
 #include "nv11.h"
 #include "hw/display/vga.h"
 
+/* Combined IRQ: PGRAPH CS plus PCRTC0/1 VBLANK, gated by PMC master
+ * and per-source enables. Polling drivers see pending bits in PMC_INTR
+ * regardless of enables; only the INTx line is gated. */
+void nv11_update_irq(NV11State *s)
+{
+    uint32_t en = ldl_le_p(s->bar0_flat + NV11_PMC_INTR_EN);
+    uint32_t pgraph = (s->pgraph_intr & NV11_PGRAPH_INTR_CONTEXT_SWITCH)
+                      ? 1 : 0;
+    uint32_t c0 = ldl_le_p(s->bar0_flat + NV11_PCRTC0_OFF + NV11_PCRTC_INTR);
+    uint32_t c0en = ldl_le_p(s->bar0_flat + NV11_PCRTC0_OFF +
+                             NV11_PCRTC_INTR_EN);
+    uint32_t c1 = ldl_le_p(s->bar0_flat + NV11_PCRTC1_OFF + NV11_PCRTC_INTR);
+    uint32_t c1en = ldl_le_p(s->bar0_flat + NV11_PCRTC1_OFF +
+                             NV11_PCRTC_INTR_EN);
+    bool irq = false;
+
+    if (pgraph && (en & NV11_PMC_INTR_EN_MASTER)) {
+        irq = true;
+    }
+    if ((c0 & NV11_PCRTC_INTR_VBLANK) && (c0en & NV11_PCRTC_INTR_VBLANK) &&
+        (en & NV11_PMC_INTR_EN_MASTER)) {
+        irq = true;
+    }
+    if ((c1 & NV11_PCRTC_INTR_VBLANK) && (c1en & NV11_PCRTC_INTR_VBLANK) &&
+        (en & NV11_PMC_INTR_EN_MASTER)) {
+        irq = true;
+    }
+    pci_set_irq(&s->parent_dev, irq);
+}
+
+static void nv11_vblank_tick(void *opaque)
+{
+    NV11State *s = opaque;
+    uint32_t c0, c1;
+
+    /* Retrace every 1/60s on both heads so VBLANK polls/ISRs complete
+     * even with VGA SI disabled. Status is set regardless of INTEN;
+     * only the INTx line is gated (see nv11_update_irq). */
+    c0 = ldl_le_p(s->bar0_flat + NV11_PCRTC0_OFF + NV11_PCRTC_INTR);
+    stl_le_p(s->bar0_flat + NV11_PCRTC0_OFF + NV11_PCRTC_INTR,
+             c0 | NV11_PCRTC_INTR_VBLANK);
+    c1 = ldl_le_p(s->bar0_flat + NV11_PCRTC1_OFF + NV11_PCRTC_INTR);
+    stl_le_p(s->bar0_flat + NV11_PCRTC1_OFF + NV11_PCRTC_INTR,
+             c1 | NV11_PCRTC_INTR_VBLANK);
+    nv11_update_irq(s);
+    timer_mod(s->vblank_timer,
+              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+              NV11_VBLANK_PERIOD_NS);
+}
+
 uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
 {
     uint32_t off = (uint32_t)addr;
@@ -58,8 +108,21 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
             goto return_val;
         }
         if (reg == NV11_PMC_INTR_HOST) {
-            /* No PMC interrupts pending on idle HW. */
-            val = 0;
+            /* Raw pending sources, regardless of INTR_EN: the driver masks
+             * the line (EN=0) then samples this register to learn which
+             * source was real before dispatching. PGRAPH = bit12,
+             * CRTC0/1 VBLANK = bits 24/25; read == 0 => IRQ_NONE.
+             * Only the INTx line output is gated by the MASTER enable. */
+            val = (s->pgraph_intr & NV11_PGRAPH_INTR_CONTEXT_SWITCH)
+                  ? NV11_PMC_INTR_PGRAPH_PENDING : 0;
+            if (ldl_le_p(s->bar0_flat + NV11_PCRTC0_OFF + NV11_PCRTC_INTR) &
+                NV11_PCRTC_INTR_VBLANK) {
+                val |= NV11_PMC_INTR_CRTC0_PENDING;
+            }
+            if (ldl_le_p(s->bar0_flat + NV11_PCRTC1_OFF + NV11_PCRTC_INTR) &
+                NV11_PCRTC_INTR_VBLANK) {
+                val |= NV11_PMC_INTR_CRTC1_PENDING;
+            }
             goto return_val;
         }
         goto flat_read;
@@ -150,10 +213,15 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
 
     if (off >= NV11_PCRTC0_OFF && off < NV11_PCRTC0_END) {
         uint32_t reg = off - NV11_PCRTC0_OFF;
-        uint32_t idx = reg / 4;
         trace_nv11_pcrtc_read(eip, 0, reg, size);
-        if (idx < sizeof(s->pcrtc_scratch[0]) / sizeof(s->pcrtc_scratch[0][0])) {
-            val = s->pcrtc_scratch[0][idx];
+        /* Must read back what was written via flat_write below;
+         * pcrtc_scratch is never updated and would always return 0,
+         * breaking head-select (0x860) and timing programming. */
+        val = ldl_le_p(s->bar0_flat + (off & ~3u));
+        if (size == 1) {
+            val = (val >> (8 * (off & 3))) & 0xFF;
+        } else if (size == 2) {
+            val = (val >> (8 * (off & 3))) & 0xFFFF;
         }
         goto return_val;
     }
@@ -173,10 +241,13 @@ uint64_t nv11_bar0_read(NV11State *s, hwaddr addr, unsigned size)
 
     if (off >= NV11_PCRTC1_OFF && off < NV11_PCRTC1_END) {
         uint32_t reg = off - NV11_PCRTC1_OFF;
-        uint32_t idx = reg / 4;
         trace_nv11_pcrtc_read(eip, 1, reg, size);
-        if (idx < sizeof(s->pcrtc_scratch[1]) / sizeof(s->pcrtc_scratch[1][0])) {
-            val = s->pcrtc_scratch[1][idx];
+        /* See PCRTC0: read back flat, not stale scratch. */
+        val = ldl_le_p(s->bar0_flat + (off & ~3u));
+        if (size == 1) {
+            val = (val >> (8 * (off & 3))) & 0xFF;
+        } else if (size == 2) {
+            val = (val >> (8 * (off & 3))) & 0xFFFF;
         }
         goto return_val;
     }
@@ -247,11 +318,11 @@ flat_read:
         return 0;
     }
 
-    trace_nv11_bar0_read(eip, off, size);
+    trace_nv11_bar0_read(eip, off, size, val);
     return val;
 
 return_val:
-    trace_nv11_bar0_read(eip, off, size);
+    trace_nv11_bar0_read(eip, off, size, val);
     if (off == NV11_PMC_INTR_HOST ||
         off == NV11_PFIFO_CACHE1_STATUS ||
         (off >= NV11_PFIFO_CACHE1_DMA_CTL &&
@@ -275,6 +346,26 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
         uint32_t reg = off - NV11_PMC_OFF;
         if (reg == NV11_PMC_BOOT_0) {
             return;   /* Chip ID. Don't write */
+        }
+        if (reg == NV11_PMC_INTR_HOST) {
+            /* W1C ack of raw pending sources */
+            if (val & NV11_PMC_INTR_PGRAPH_PENDING) {
+                s->pgraph_intr &= ~NV11_PGRAPH_INTR_CONTEXT_SWITCH;
+            }
+            if (val & NV11_PMC_INTR_CRTC0_PENDING) {
+                uint32_t c0 = ldl_le_p(s->bar0_flat + NV11_PCRTC0_OFF +
+                                       NV11_PCRTC_INTR);
+                stl_le_p(s->bar0_flat + NV11_PCRTC0_OFF + NV11_PCRTC_INTR,
+                         c0 & ~NV11_PCRTC_INTR_VBLANK);
+            }
+            if (val & NV11_PMC_INTR_CRTC1_PENDING) {
+                uint32_t c1 = ldl_le_p(s->bar0_flat + NV11_PCRTC1_OFF +
+                                       NV11_PCRTC_INTR);
+                stl_le_p(s->bar0_flat + NV11_PCRTC1_OFF + NV11_PCRTC_INTR,
+                         c1 & ~NV11_PCRTC_INTR_VBLANK);
+            }
+            nv11_update_irq(s);
+            return;
         }
         goto flat_write;
     }
@@ -338,6 +429,13 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
         if (reg == NV11_PCRTC_CURSOR_CFG) {
             s->cur_cfg = (uint32_t)val;
         }
+        /* INTSTAT is W1C (nouveau acks VBLANK by writing bit0). */
+        if (reg == NV11_PCRTC_INTR && size == 4) {
+            uint32_t cur = ldl_le_p(s->bar0_flat + off);
+            stl_le_p(s->bar0_flat + off, cur & ~(uint32_t)val);
+            nv11_update_irq(s);
+            return;
+        }
         goto flat_write;
     }
 
@@ -359,6 +457,13 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
         trace_nv11_pcrtc_write(eip, 1, reg, size, (uint32_t)val);
         if (reg == NV11_PCRTC_CURSOR_CFG) {
             s->cur_cfg = (uint32_t)val;
+        }
+        /* INTSTAT is W1C */
+        if (reg == NV11_PCRTC_INTR && size == 4) {
+            uint32_t cur = ldl_le_p(s->bar0_flat + off);
+            stl_le_p(s->bar0_flat + off, cur & ~(uint32_t)val);
+            nv11_update_irq(s);
+            return;
         }
         goto flat_write;
     }
@@ -415,6 +520,34 @@ void nv11_bar0_write(NV11State *s, hwaddr addr, uint64_t val, unsigned size)
         return;
     }
 
+    /* PFIFO CACHE1 channel-0 DMA_PUT: same submission path as the USER
+     * DMA_PUT poke, so a driver that drives CACHE1 works too. */
+    if (off == NV11_PFIFO_CACHE1_DMA_PUT && size == 4) {
+        stl_le_p(s->bar0_flat + off, (uint32_t)val);
+        nv11_fifo_dma_push(s, 0, (uint32_t)val);
+        return;
+    }
+
+    /* PFIFO CACHE1 DMA_PUSH doorbell: Re-submit the current CACHE1 PUT so the
+     * freshly programmed DMA_INSTANCE/FETCH takes effect. Empty (PUT==0
+     * or PUT==GET) is a no-op context load, as in nv11_fifo_dma_push. */
+    if (off == NV11_PFIFO_CACHE1_DMA_PUSH && size == 4) {
+        uint32_t put;
+
+        stl_le_p(s->bar0_flat + off, (uint32_t)val);
+        put = ldl_le_p(s->bar0_flat + NV11_PFIFO_CACHE1_DMA_PUT);
+        nv11_fifo_dma_push(s, 0, put);
+        return;
+    }
+
+    /* PFIFO CACHE1 DMA_GET: Some drivers restore the pusher position here
+     * when it drives CACHE1 directly instead of through the RAMFC image. */
+    if (off == NV11_PFIFO_CACHE1_DMA_GET && size == 4) {
+        stl_le_p(s->bar0_flat + off, (uint32_t)val);
+        s->fifo[0].dma_get = (uint32_t)val;
+        return;
+    }
+
 flat_write:
     if (off + size > NV11_BAR0_SIZE) {
         qemu_log_mask(LOG_GUEST_ERROR,
@@ -429,6 +562,20 @@ flat_write:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "NV11: [BAR0] bad write size %u at 0x%x\n", size, off);
         return;
+    }
+
+    if (off >= NV11_PMC_INTR_HOST && off < NV11_PMC_INTR_HOST + 0x100) {
+        nv11_update_irq(s);   /* EN/status changes re-evaluate INTx */
+    }
+    if ((off >= NV11_PCRTC0_OFF + NV11_PCRTC_INTR &&
+         off < NV11_PCRTC0_OFF + NV11_PCRTC_INTR + 4) ||
+        (off >= NV11_PCRTC0_OFF + NV11_PCRTC_INTR_EN &&
+         off < NV11_PCRTC0_OFF + NV11_PCRTC_INTR_EN + 4) ||
+        (off >= NV11_PCRTC1_OFF + NV11_PCRTC_INTR &&
+         off < NV11_PCRTC1_OFF + NV11_PCRTC_INTR + 4) ||
+        (off >= NV11_PCRTC1_OFF + NV11_PCRTC_INTR_EN &&
+         off < NV11_PCRTC1_OFF + NV11_PCRTC_INTR_EN + 4)) {
+        nv11_update_irq(s);
     }
 }
 
@@ -479,12 +626,11 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     pci_register_bar(dev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY |
                      PCI_BASE_ADDRESS_MEM_TYPE_32, &s->bar0);
 
-    /* BAR1: Prefetched VRAM */
-    memory_region_init_alias(&s->bar1, OBJECT(dev), "nv11.bar1.vram",
-                             &s->vga.vram, 0, s->vga.vram_size);
-    pci_register_bar(dev, 1, PCI_BASE_ADDRESS_SPACE_MEMORY |
-                     PCI_BASE_ADDRESS_MEM_PREFETCH |
-                     PCI_BASE_ADDRESS_MEM_TYPE_32, &s->bar1);
+    /* BAR1: Prefetched VRAM - register the VGA framebuffer RAM directly,
+     * like upstream PCI VGA devices, so the backend shares the same memory
+     * and guest writes are dirty-tracked (memory window, not I/O). */
+    pci_register_bar(dev, 1, PCI_BASE_ADDRESS_MEM_PREFETCH,
+                     &s->vga.vram);
 
     vga_init(&s->vga, OBJECT(dev),
              pci_address_space(dev), pci_address_space_io(dev), false);
@@ -504,6 +650,12 @@ static void nv11_realize(PCIDevice *dev, Error **errp)
     nv11_fifo_init(s);
     nv11_2d_init(s);
     nv11_i2c_init(s);
+
+    /* 60Hz retrace for VBLANK polls/ISRs (PCRTC 0x100 bit0). */
+    s->vblank_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, nv11_vblank_tick, s);
+    timer_mod(s->vblank_timer,
+              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+              NV11_VBLANK_PERIOD_NS);
 
     pci_set_word(dev->config + PCI_COMMAND,
                  PCI_COMMAND_IO | PCI_COMMAND_MEMORY);

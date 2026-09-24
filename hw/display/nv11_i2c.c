@@ -146,15 +146,23 @@ void nv11_ddc_drive(NV11State *s, int bus, uint8_t value)
     trace_nv11_i2c_drive(nv11_get_eip(), bus, value, scl, sda);
 }
 
-/* CRTC sense register read: report the current SCL/SDA line levels. */
+/* CRTC sense register read: report the live SCL/SDA line levels.
+ * The slave (EDID) can pull SDA low for ACK/data after the master
+ * releases it, so sample device_out & last_data instead of the stale
+ * drive-time cache. SCL is master-driven (no clock stretching). */
 uint8_t nv11_ddc_sense(NV11State *s, int bus)
 {
+    bitbang_i2c_interface *i2c = &s->bbi2c[bus];
+    bool scl = i2c->last_clock != 0;
+    bool sda = (i2c->device_out & i2c->last_data) != 0;
     uint8_t val = 0;
 
-    if (s->ddc_scl[bus]) {
+    s->ddc_scl[bus] = scl;
+    s->ddc_sda[bus] = sda;
+    if (scl) {
         val |= NV11_DDC_SCL_READ;
     }
-    if (s->ddc_sda[bus]) {
+    if (sda) {
         val |= NV11_DDC_SDA_READ;
     }
 

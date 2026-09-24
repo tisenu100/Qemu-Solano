@@ -186,8 +186,7 @@ void nv11_ptimer_write(NV11State *s, hwaddr offset, uint64_t val, unsigned size)
     case NV11_PTIMER_TIME_LOW:
     case NV11_PTIMER_TIME_HIGH:
         /*
-         * TIME is writable (nouveau sets it on init/resume: HIGH then
-         * LOW). Rebase the free-running counter so the combined 64-bit
+         * TIME is writable. Rebase the free-running counter so the combined 64-bit
          * value equals the written value from now on.
          */
         now = (uint64_t)qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);

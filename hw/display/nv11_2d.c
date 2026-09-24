@@ -549,6 +549,53 @@ static void nv11_2d_rect_nv4_method(NV11State *s, uint32_t reg, uint32_t val)
     }
 }
 
+static void nv11_2d_ifc_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    switch (reg) {
+    case NV11_2D_IFC_OPER:
+        s->d2d_ifc_op = val;
+        break;
+    case NV11_2D_IFC_FMT:
+        s->d2d_ifc_fmt = val;
+        break;
+    case NV11_2D_IFC_POINT:
+        nv11_2d_expand_begin(s, false, val, s->d2d_exp_wh);
+        break;
+    case NV11_2D_IFC_SIZE_OUT:
+        s->d2d_exp_wh = val;
+        break;
+    case NV11_2D_IFC_SIZE_IN:
+        break;
+    default:
+        if (reg >= NV11_2D_IFC_COLOR && reg < NV11_FIFO_CHAN_SIZE) {
+            nv11_2d_expand_data(s, val);
+        }
+        break;
+    }
+}
+
+static void nv11_2d_opsrc_method(NV11State *s, uint32_t reg, uint32_t val)
+{
+    switch (reg) {
+    case NV11_2D_OP_OPER:
+        s->d2d_ifc_op = val;
+        break;
+    case NV11_2D_OP_COLOR:
+        s->d2d_col1a = val;
+        break;
+    case NV11_2D_OP_P1:
+        s->d2d_rect_tl = val;
+        break;
+    case NV11_2D_OP_P2:
+        nv11_2d_fill_rect(s, s->d2d_rect_tl & 0xFFFF, s->d2d_rect_tl >> 16,
+                          (val & 0xFFFF) - (s->d2d_rect_tl & 0xFFFF),
+                          (val >> 16) - (s->d2d_rect_tl >> 16));
+        break;
+    default:
+        break;
+    }
+}
+
 /* BT.601 YUV -> 32-bit XRGB. */
 static inline uint32_t nv11_2d_yuv_to_rgb32(uint8_t y, uint8_t u, uint8_t v)
 {
@@ -956,6 +1003,15 @@ void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val)
         break;
     case NV11_CLASS_SIFM:
         nv11_2d_sifm_method(s, reg, val);
+        break;
+    case NV11_CLASS_SIFC:
+        nv11_2d_sifm_method(s, reg, val);
+        break;
+    case NV11_CLASS_IFC_NV4:
+        nv11_2d_ifc_method(s, reg, val);
+        break;
+    case NV11_CLASS_OP_SRCCOPY:
+        nv11_2d_opsrc_method(s, reg, val);
         break;
     case NV11_CLASS_M2MF:
         nv11_2d_m2mf_method(s, reg, val);

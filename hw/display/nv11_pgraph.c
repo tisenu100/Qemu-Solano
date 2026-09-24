@@ -24,6 +24,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "hw/pci/pci.h"
 #include "nv11.h"
 #include "trace.h"
 
@@ -128,13 +129,22 @@ void nv11_pgraph_write(NV11State *s, hwaddr offset, uint64_t val, unsigned size)
 
         s->pgraph_intr &= ~mask;
         trace_nv11_pgraph_intr_clear(eip, (uint32_t)val, s->pgraph_intr);
+        nv11_pgraph_update_intr(s);
         return;
     }
 
-    /* FIFO kick (bit0=1): the pusher fetches the queued methods and performs
-     * a context switch once they are consumed. */
+    /* FIFO kick (bit0=1): start the engine on whatever work was handed to
+     * PGRAPH from the ring. A kick with nothing buffered is a no-op (real
+     * HW produces no context-switch unless there is work to complete). */
     if (reg == NV11_PGRAPH_FIFO && size == 4 && (val & 1)) {
-        nv11_pgraph_notify_cs(s);
+        nv11_fifo_kick(s);
+    }
+
+    /* A context (re)load via CTX_CONTROL is engine work too: the driver
+     * blank-loads a channel context and then FIFO-kicks; the completion
+     * (context-switch) interrupt must follow once the load "completes". */
+    if (reg == NV11_PGRAPH_CTX_CONTROL && size == 4) {
+        s->pgraph_work++;
     }
 
     switch (size) {
@@ -161,6 +171,7 @@ void nv11_pgraph_reset(NV11State *s)
     memset(s->pgraph_scratch, 0, sizeof(s->pgraph_scratch));
     s->pgraph_intr = 0;
     s->pgraph_busy = false;
+    s->pgraph_work = 0;
 }
 
 void nv11_pgraph_notify_cs(NV11State *s)
@@ -169,6 +180,16 @@ void nv11_pgraph_notify_cs(NV11State *s)
 
     s->pgraph_intr |= NV11_PGRAPH_INTR_CONTEXT_SWITCH;
     trace_nv11_pgraph_intr_cs(eip);
+    nv11_pgraph_update_intr(s);
+}
+
+/* Drive the PCI INTx line from the PGRAPH pending-interrupt state, gated by
+ * the PMC master enable (INTR_EN bit0): asserting an un-enabled interrupt
+ * latches the line high and the driver's ISR busy-loops.
+ * Delegates to the combined IRQ so PCRTC VBLANK shares the line. */
+void nv11_pgraph_update_intr(NV11State *s)
+{
+    nv11_update_irq(s);
 }
 
 void nv11_pgraph_init(NV11State *s)

@@ -94,6 +94,10 @@
 /* PCRTC registers (within 0x1000 block) */
 #define NV11_PCRTC_INTR          0x000100
 #define NV11_PCRTC_INTR_EN       0x000140
+#define NV11_PCRTC_INTR_VBLANK   (1u << 0)
+#define NV11_PMC_INTR_CRTC0_PENDING (1u << 24)
+#define NV11_PMC_INTR_CRTC1_PENDING (1u << 25)
+#define NV11_VBLANK_PERIOD_NS    (NANOSECONDS_PER_SECOND / 60)
 
 /* PRAMDAC registers (within 0x2000 block) */
 #define NV11_PRAMDAC_NVPLL       0x000500
@@ -107,6 +111,12 @@
 #define NV11_PRAMDAC_DACCLK      0x00052C
 #define NV11_PRAMDAC_580         0x000580
 #define NV11_PRAMDAC_GEN_CTL     0x000600
+#define NV11_PRAMDAC_GEN_CTL_PIXMIX_ON     (3 << 4)
+#define NV11_PRAMDAC_GEN_CTL_VGA_STATE_SEL (1 << 8)
+#define NV11_PRAMDAC_GEN_CTL_BPC_8BITS     (1 << 20)
+#define NV11_PRAMDAC_GEN_CTL_CRT_ON        (NV11_PRAMDAC_GEN_CTL_PIXMIX_ON | \
+                                            NV11_PRAMDAC_GEN_CTL_VGA_STATE_SEL | \
+                                            NV11_PRAMDAC_GEN_CTL_BPC_8BITS)
 #define NV11_PRAMDAC_TEST_CTL    0x000608
 #define NV11_PRAMDAC_TESTPOINT   0x000610
 #define NV11_PRAMDAC_TV_SETUP    0x000700
@@ -150,12 +160,16 @@
 #define NV11_PGRAPH_INTR         0x000100
 #define NV11_PGRAPH_INTR_CONTEXT_SWITCH (1 << 12)  /* bit12: ctx switch done */
 #define NV11_PGRAPH_INTR_EN      0x000140
+#define NV11_PGRAPH_CTX_CONTROL  0x000144   /* write = context (re)load */
 #define NV11_PGRAPH_STATUS       0x000700   /* bit0 = busy */
 #define NV11_PGRAPH_CTX_CTRL     0x000710
 #define NV11_PGRAPH_FIFO         0x000720   /* bit0 = fifo enable */
 
 /* PMC */
-#define NV11_PMC_INTR_HOST                   0x000100   /* no pending IRQs = 0 */
+#define NV11_PMC_INTR_HOST    0x000100   /* raw pending IRQ sources (read); W1C ack */
+#define NV11_PMC_INTR_EN      0x000140   /* bit0 = MASTER_ENABLE (gates INTx line) */
+#define NV11_PMC_INTR_PGRAPH_PENDING  (1u << 12)  /* PGRAPH pending in PMC_INTR */
+#define NV11_PMC_INTR_EN_MASTER       (1u << 0)  /* master enable in PMC_INTR_EN */
 
 /* PFIFO */
 #define NV11_PFIFO_RUNOUT_STATUS             0x002400
@@ -164,10 +178,44 @@
 #define NV11_PFIFO_CACHE1_STATUS             0x003214
 #define NV11_PFIFO_STATUS_EMPTY              0x00000010u /* EMPTY bit, RANOUT=0 */
 
-/* PFIFO CACHE1 DMA context */
+/* PFIFO DMA context registers */
+#define NV11_PFIFO_RAMFC                     0x002214   /* RAMFC base, << 8 */
+#define NV11_PFIFO_CHANNEL_MODE              0x002504   /* bit0: ch0 DMA mode */
+#define NV11_PFIFO_CACHE1_DMA_PUSH           0x003220
 #define NV11_PFIFO_CACHE1_DMA_FETCH          0x003224
+#define NV11_PFIFO_CACHE1_DMA_STATE          0x003228
+#define NV11_PFIFO_CACHE1_DMA_INSTANCE       0x00322C
 #define NV11_PFIFO_CACHE1_DMA_CTL            0x003230
+#define NV11_PFIFO_CACHE1_DMA_LIMIT          0x003234
+#define NV11_PFIFO_CACHE1_DMA_PUT            0x003240
+#define NV11_PFIFO_CACHE1_DMA_GET            0x003244
+#define NV11_PFIFO_CACHE1_SUBROUTINE         0x00324C
 #define NV11_PFIFO_DMA_CTL_VALID             0x80000000u
+
+/* CACHE1 DMA_STATE layout */
+#define NV11_DMA_STATE_NONINC                (1 << 0)
+#define NV11_DMA_STATE_METHOD_MASK           0x00001FFC
+#define NV11_DMA_STATE_METHOD_SHIFT          2
+#define NV11_DMA_STATE_SUBCH_MASK            0x0000E000
+#define NV11_DMA_STATE_SUBCH_SHIFT           13
+#define NV11_DMA_STATE_MCNT_MASK             0x1FFC0000
+#define NV11_DMA_STATE_MCNT_SHIFT            18
+#define NV11_DMA_STATE_ERROR_MASK            0xE0000000
+#define NV11_DMA_STATE_ERROR_SHIFT           29
+
+/* DMA_PUSHER error codes (DMA_STATE bits 31:29). */
+#define NV11_DMA_PUSHER_ERR_NONE             0
+#define NV11_DMA_PUSHER_ERR_CALL_SUBR        1
+#define NV11_DMA_PUSHER_ERR_INVALID_MTHD     2
+#define NV11_DMA_PUSHER_ERR_RET_SUBR         3
+#define NV11_DMA_PUSHER_ERR_INVALID_CMD      4
+#define NV11_DMA_PUSHER_ERR_MEM_FAULT        6
+
+/* CACHE1 SUBROUTINE (0x324c): bit0 ACTIVE, bits[31:2] RETURN address. */
+#define NV11_SUBROUTINE_ACTIVE               (1 << 0)
+
+/* Safety cap for one DMA_PUT submission decoding pass. */
+#define NV11_DMA_MAX_ITERS                   0x100000
 
 /* FIFO window
  * NV11 has 8 subchannels of 0x2000 bytes each. Every channel:
@@ -196,10 +244,6 @@
 #define NV11_FIFO_FULL           0x0800   /* FIFOFree start/idle watermark (bytes) */
 #define NV11_FIFO_DRAIN_NS       (NANOSECONDS_PER_SECOND / 1000)
 
-/* DMA pusher: ring at VRAM FbUsableSize, 32 KB, word-addressed */
-#define NV11_DMA_RING_SIZE       0x8000
-#define NV11_DMA_RING_MASK       0x7FFF
-
 /* 2D Object Class IDs (Defined by envytools method Nvidia Generation_Command ) */
 #define NV11_CLASS_NONE          0x00
 #define NV11_CLASS_PATT          0x18   /* NV1_PATTERN */
@@ -216,8 +260,13 @@
 #define NV11_CLASS_LIN           0x1C   /* NV1_LIN */
 #define NV11_CLASS_SURF          0x62   /* NV4_SURFACE */
 #define NV11_CLASS_DMA           0x30   /* NV_DMA_IN_MEMORY (legacy) */
+#define NV11_CLASS_DMA_IN_MEMORY 0x3D   /* NV_CLASS_DMA_IN_MEMORY (pushbuffer) */
+#define NV11_CLASS_DMA_FROM_MEMORY 0x02 /* NV_CLASS_DMA_FROM_MEMORY (pushbuffer) */
 #define NV11_CLASS_M2MF          0x39   /* NV3_M2MF */
 #define NV11_CLASS_SIFM          0x77   /* NV4_SIFM (stretch blit) */
+#define NV11_CLASS_IFC_NV4       0x61   /* NV4_IFC (image from CPU) */
+#define NV11_CLASS_OP_SRCCOPY    0x64   /* NV1_OP_SRCCOPY_AND */
+#define NV11_CLASS_SIFC          0x76   /* NV4_SIFC (stretch image from CPU) */
 #define NV11_CLASS_NOP           0x100  /* NV_NOP */
 #define NV11_CLASS_NOTIFY        0x104  /* NV_NOTIFY */
 
@@ -311,6 +360,20 @@
 #define NV11_2D_SIFM_FMT_YUYV     0x05
 #define NV11_2D_SIFM_FMT_MASK     0xFF
 
+/* NV4_IFC (class 0x61). */
+#define NV11_2D_IFC_OPER         0x3E4
+#define NV11_2D_IFC_FMT          0x3E8
+#define NV11_2D_IFC_POINT        0x3F4
+#define NV11_2D_IFC_SIZE_OUT     0x3F8
+#define NV11_2D_IFC_SIZE_IN      0x3FC
+#define NV11_2D_IFC_COLOR        0x400
+
+/* NV1_OP_SRCCOPY_AND (class 0x64). */
+#define NV11_2D_OP_OPER          0x2FC
+#define NV11_2D_OP_COLOR         0x304
+#define NV11_2D_OP_P1            0x400
+#define NV11_2D_OP_P2            0x404
+
 /* NV3_M2MF (class 0x39). */
 #define NV11_2D_M2MF_DMA_NOTIFY  0x180
 #define NV11_2D_M2MF_DMA_IN      0x184
@@ -381,7 +444,6 @@ typedef struct NV11State {
 
     MemoryRegion bar0;
     uint8_t     bar0_flat[NV11_BAR0_SIZE];
-    MemoryRegion bar1;
     MemoryRegion window_io;
     uint8_t     *vram_ptr;      /* host pointer to vga.vram, for DMA ring */
 
@@ -421,7 +483,16 @@ typedef struct NV11State {
         uint32_t methods[NV11_FIFO_CHAN_SIZE / 4]; /* Shadow of whole channel */
         uint16_t fifo_free;                        /* FIFOFree (bytes) */
         uint32_t pending;                          /* dwords queued, not drained */
-        uint32_t dma_get;                          /* DMA pusher GET pointer (bytes) */
+        uint32_t dma_get;                          /* DMA pusher GET (absolute bytes) */
+        uint32_t dma_put;                          /* last DMA_PUT (absolute bytes) */
+        uint32_t dma_state;                        /* CACHE1 DMA_STATE: mthd/subc/mcnt/ni/err */
+        uint32_t subr_ret;                         /* CACHE1 SUBROUTINE: ACTIVE bit0, RETURN no */
+        uint32_t obj_base;                         /* pushbuffer DMA object start (target space) */
+        uint32_t obj_limit;                        /* pushbuffer DMA object limit (size-1) */
+        uint32_t obj_target;                       /* pushbuffer DMA object target (0=NVM) */
+        uint32_t obj_inst;                         /* DMA_INSTANCE this object was resolved from */
+        bool     obj_valid;                        /* pushbuffer object resolved */
+        bool     dma_seeded;                       /* initial GET taken from RAMFC image */
     } fifo[NV11_FIFO_CHANNELS];
 
     /* Per-subchannel object class, decoded from RAMIN on context bind.
@@ -432,9 +503,13 @@ typedef struct NV11State {
     uint32_t pgraph_scratch[(NV11_PGRAPH_END - NV11_PGRAPH_OFF) / 4];
     uint32_t pgraph_intr;    /* PGRAPH[0x100] pending interrupt status (W1C) */
     bool     pgraph_busy;    /* PGRAPH[0x700] bit0, set on FIFO method write */
+    uint32_t pgraph_work;    /* method dwords fed but not yet CS-completed */
 
     /* FIFO window drain timer */
     QEMUTimer  *fifo_timer;
+
+    /* PCRTC vblank timer (60Hz retrace, heads 0/1) */
+    QEMUTimer  *vblank_timer;
 
     /* DDC / I2C. One bit-banged bus + monitor EDID slave. */
     bitbang_i2c_interface bbi2c[NV11_DDC_BUSES];
@@ -466,8 +541,9 @@ typedef struct NV11State {
     uint32_t d2d_sifm_fmt, d2d_sifm_clip_tl, d2d_sifm_clip_wh;
     uint32_t d2d_sifm_dst, d2d_sifm_dst_wh;
     uint32_t d2d_sifm_dudx, d2d_sifm_dvdy;
-    uint32_t d2d_sifm_src_wh, d2d_sifm_src_fmt, d2d_sifm_src_off;
-    uint32_t d2d_sifm_src_point;
+uint32_t d2d_sifm_src_wh, d2d_sifm_src_fmt, d2d_sifm_src_off;
+uint32_t d2d_sifm_src_point;
+uint32_t d2d_ifc_op, d2d_ifc_fmt;
 
     /* M2MF */
     uint32_t d2d_m2mf_in, d2d_m2mf_out;
@@ -484,6 +560,9 @@ typedef struct NV11State {
     uint32_t last_cur_pos;      /* last-drawn position, for invalidation */
     uint32_t last_cur_img;
     bool     last_cur_enabled;
+
+    /* Debug: paint a moving colour-bar pattern into the scanout area on
+     * every CRTC start/flip or bpp write, to validate the display path. */
 } NV11State;
 
 #define TYPE_NV11 "nv11"
@@ -519,6 +598,9 @@ uint64_t nv11_pgraph_read(NV11State *s, hwaddr offset, unsigned size);
 void nv11_pgraph_write(NV11State *s, hwaddr offset, uint64_t val,
                        unsigned size);
 void nv11_pgraph_notify_cs(NV11State *s);
+void nv11_pgraph_update_intr(NV11State *s);
+void nv11_update_irq(NV11State *s);
+void nv11_fifo_kick(NV11State *s);
 void nv11_ptimer_init(NV11State *s);
 void nv11_ptimer_reset(NV11State *s);
 uint64_t nv11_ptimer_read(NV11State *s, hwaddr offset, unsigned size);
@@ -528,6 +610,7 @@ void nv11_2d_init(NV11State *s);
 void nv11_2d_reset(NV11State *s);
 void nv11_2d_method(NV11State *s, uint32_t chan, uint32_t reg, uint32_t val);
 uint32_t nv11_fifo_dma_frame(NV11State *s, uint32_t handle);
+void nv11_fifo_dma_push(NV11State *s, uint32_t chan, uint32_t put);
 
 void nv11_i2c_init(NV11State *s);
 void nv11_i2c_reset(NV11State *s);

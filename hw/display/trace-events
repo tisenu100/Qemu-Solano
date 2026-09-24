@@ -218,7 +218,7 @@ apple_gfx_common_realize_modes_property(uint32_t num_modes) "using %u modes supp
 apple_gfx_display_mode(uint32_t mode_idx, uint16_t width_px, uint16_t height_px) "mode %2"PRIu32": %4"PRIu16"x%4"PRIu16
 
 # nv11.c
-nv11_bar0_read(uint32_t eip, uint32_t addr, unsigned size) "NV11: [BAR0] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
+nv11_bar0_read(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [BAR0] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes) = 0x%"PRIx32
 nv11_bar0_write(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [BAR0] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
 nv11_bar0_read_val(uint32_t eip, uint32_t addr, unsigned size, uint32_t val) "NV11: [BAR0] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes) = 0x%"PRIx32
 
@@ -244,7 +244,7 @@ nv11_pmcio_write(uint32_t eip, int head, uint32_t reg, unsigned size, uint32_t v
 # nv11_pramdac.c
 nv11_pramdac_init(void) "NV11: [PRAMDAC] init"
 nv11_pramdac_reset(void) "NV11: [PRAMDAC] reset"
-nv11_pramdac_read(uint32_t eip, int head, uint32_t reg, unsigned size) "NV11: [eip=0x%"PRIx32"] PRAMDAC%d read 0x%"PRIx32" (%u bytes)"
+nv11_pramdac_read(uint32_t eip, int head, uint32_t reg, unsigned size, uint32_t val) "NV11: [eip=0x%"PRIx32"] PRAMDAC%d read 0x%"PRIx32" (%u bytes) = 0x%"PRIx32
 nv11_pramdac_write(uint32_t eip, int head, uint32_t reg, unsigned size, uint32_t val) "NV11: [eip=0x%"PRIx32"] PRAMDAC%d write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
 nv11_pramdac_pll(uint32_t eip, int head, uint32_t reg, uint32_t m1, uint32_t n1, uint32_t p) "NV11: [PRAMDAC] [eip=0x%"PRIx32"] PLL%d reg=0x%"PRIx32" M1=%"PRIu32" N1=%"PRIu32" P=%"PRIu32
 
@@ -269,16 +269,29 @@ nv11_prome_write_blocked(uint32_t eip, uint32_t addr) "NV11: [PROM] [eip=0x%"PRI
 
 # nv11_fifo.c
 nv11_fifo_init(void) "NV11: [FIFO] init"
-nv11_fifo_read(uint32_t eip, uint32_t off, unsigned size) "NV11: [FIFO] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes)"
+nv11_fifo_read(uint32_t eip, uint32_t off, unsigned size, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] read 0x%"PRIx32" (%u bytes) = 0x%"PRIx32
 nv11_fifo_write(uint32_t eip, uint32_t off, unsigned size, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] write 0x%"PRIx32" (%u bytes) val=0x%"PRIx32
 nv11_fifo_context(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u context <- 0x%"PRIx32
 nv11_fifo_dma_get(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA_GET -> 0x%"PRIx32
+nv11_fifo_dma_object(uint32_t eip, uint32_t chan, uint32_t cls, uint32_t target, uint32_t base, uint32_t limit) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u pushbuffer obj class=0x%"PRIx32" target=%u base=0x%"PRIx32" limit=0x%"PRIx32
+nv11_fifo_dma_push_end(uint32_t eip, uint32_t chan, uint32_t get, uint32_t err, uint32_t subr) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA_PUSH end get=0x%"PRIx32" err=%u subr=0x%"PRIx32
 nv11_fifo_dma_push(uint32_t eip, uint32_t chan, uint32_t put, uint32_t base, uint32_t get) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA_PUT 0x%"PRIx32" ring@0x%"PRIx32" get=0x%"PRIx32
-nv11_fifo_dma_ring0(uint32_t eip, uint32_t chan, uint32_t get, uint32_t put, uint32_t d0, uint32_t d1, uint32_t d2, uint32_t d3) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA ring get=0x%"PRIx32" put=0x%"PRIx32": 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
-nv11_fifo_dma_ring1(uint32_t eip, uint32_t chan, uint32_t d4, uint32_t d5, uint32_t d6, uint32_t d7) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA ring cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
 nv11_fifo_dma_method(uint32_t eip, uint32_t chan, uint32_t reg, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA method 0x%"PRIx32" <- 0x%"PRIx32
-nv11_fifo_dma_bind(uint32_t eip, uint32_t chan, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA bind <- 0x%"PRIx32
+nv11_fifo_dma_bind(uint32_t eip, uint32_t chan, uint32_t val, uint16_t cls) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA bind <- 0x%"PRIx32" -> class 0x%"PRIx16
 nv11_fifo_dma_idle(uint32_t eip, uint32_t chan, uint32_t get) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA idle get=0x%"PRIx32
+nv11_dma_abs0(uint32_t eip, uint32_t get, uint32_t d0, uint32_t d1, uint32_t d2, uint32_t d3) "NV11: [FIFO] [eip=0x%"PRIx32"] ABS base0 get=0x%"PRIx32": 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_abs1(uint32_t eip, uint32_t d4, uint32_t d5, uint32_t d6, uint32_t d7) "NV11: [FIFO] [eip=0x%"PRIx32"] ABS cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_abs2(uint32_t eip, uint32_t d8, uint32_t d9, uint32_t d10, uint32_t d11) "NV11: [FIFO] [eip=0x%"PRIx32"] ABS cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_abs3(uint32_t eip, uint32_t d12, uint32_t d13, uint32_t d14, uint32_t d15) "NV11: [FIFO] [eip=0x%"PRIx32"] ABS cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_put0(uint32_t eip, uint32_t put, uint32_t p0, uint32_t p1, uint32_t p2, uint32_t p3) "NV11: [FIFO] [eip=0x%"PRIx32"] PUT window 0x%"PRIx32": 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_put1(uint32_t eip, uint32_t p4, uint32_t p5, uint32_t p6, uint32_t p7) "NV11: [FIFO] [eip=0x%"PRIx32"] PUT window cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_put2(uint32_t eip, uint32_t p8, uint32_t p9, uint32_t p10, uint32_t p11) "NV11: [FIFO] [eip=0x%"PRIx32"] PUT window cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_put3(uint32_t eip, uint32_t p12, uint32_t p13, uint32_t p14, uint32_t p15) "NV11: [FIFO] [eip=0x%"PRIx32"] PUT window cont: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_fifo_dma_obj_raw(uint32_t eip, uint32_t chan, uint32_t pinst, uint32_t obj, uint32_t w0, uint32_t w1, uint32_t w2) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u obj pinst 0x%"PRIx32" @0x%"PRIx32": 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_err(uint32_t eip, uint32_t chan, uint32_t err, uint32_t addr, uint32_t d0, uint32_t d1, uint32_t d2, uint32_t d3, uint32_t d4, uint32_t d5) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u DMA error %u at 0x%"PRIx32": 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_scan(uint32_t eip, uint32_t chan, uint32_t off, uint32_t d0, uint32_t d1, uint32_t d2, uint32_t d3, uint32_t d4, uint32_t d5) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u fill boundary @0x%"PRIx32": 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_ring_vram(uint32_t d0, uint32_t d1, uint32_t d2, uint32_t d3, uint32_t d4, uint32_t d5, uint32_t d6, uint32_t d7) "NV11: [FIFO] ring VRAM: 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
+nv11_dma_ring_sys(uint32_t d0, uint32_t d1, uint32_t d2, uint32_t d3, uint32_t d4, uint32_t d5, uint32_t d6, uint32_t d7) "NV11: [FIFO] ring SYS:  0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32" 0x%08"PRIx32
 nv11_fifo_method(uint32_t eip, uint32_t chan, uint32_t reg, uint32_t val) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u method 0x%"PRIx32" <- 0x%"PRIx32
 nv11_fifo_free(uint32_t eip, uint32_t chan, uint32_t free) "NV11: [FIFO] [eip=0x%"PRIx32"] subch%u FifoFree=%u bytes"
 nv11_fifo_drain(uint32_t eip, uint32_t chan, uint32_t n) "NV11: [FIFO] [eip=0x%"PRIx32"] drain subch%u %u dwords"
@@ -326,3 +339,6 @@ apple_gfx_iosfc_unmap_memory(void *a, void *b, void *c, void *d, void *e, void *
 apple_gfx_iosfc_unmap_memory_region(void* mem, void *region) "unmapping @ %p from memory region %p"
 apple_gfx_iosfc_raise_irq(uint32_t vector) "vector=0x%x"
 
+
+nv11_vram_probe(uint32_t dwords, uint64_t nonzero, uint32_t acc, uint32_t f0, uint32_t f1, uint32_t f2, uint32_t f3) "NV11: [VRAM] probe dwords=%u nonzero=%"PRIu64" acc=0x%"PRIx32" first=%u,%u,%u,%u"
+nv11_vram_params(uint32_t eip, int bpp, int w, int h, uint32_t base, uint32_t pitch) "NV11: [VRAM] [eip=0x%"PRIx32"] params bpp=%d res=%dx%d base=0x%"PRIx32" pitch=%u"
