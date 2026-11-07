@@ -76,17 +76,19 @@ static void i8257_write_page(void *opaque, uint32_t nport, uint32_t data)
 
     ichan = channels[nport & 7];
     if (-1 == ichan) {
-        dolog ("invalid channel %#x %#x\n", nport, data);
+        d->res_port = data; /* A fake port meant to satisfy AMIBIOS */
         return;
     }
     d->regs[ichan].page = data;
 }
+
 
 static void i8257_write_deadzone(void *opaque, uint32_t nport, uint32_t data)
 {
     I8257State *d = opaque;
     d->deadzone[nport] = data;
 }
+
 
 static void i8257_write_pageh(void *opaque, uint32_t nport, uint32_t data)
 {
@@ -108,8 +110,7 @@ static uint32_t i8257_read_page(void *opaque, uint32_t nport)
 
     ichan = channels[nport & 7];
     if (-1 == ichan) {
-        dolog ("invalid channel read %#x\n", nport);
-        return 0;
+        return d->res_port;
     }
     return d->regs[ichan].page;
 }
@@ -519,6 +520,7 @@ static const MemoryRegionOps channel_io_ops = {
 
 /* IOport from page_base */
 static const MemoryRegionPortio page_portio_list[] = {
+    { 0x00, 1, 1, .write = i8257_write_page, .read = i8257_read_page, },
     { 0x01, 3, 1, .write = i8257_write_page, .read = i8257_read_page, },
     { 0x04, 3, 1, .write = i8257_write_deadzone, .read = i8257_read_deadzone, },
     { 0x07, 1, 1, .write = i8257_write_page, .read = i8257_read_page, },

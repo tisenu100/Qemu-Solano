@@ -195,7 +195,7 @@ static void pcspk_realizefn(DeviceState *dev, Error **errp)
 
     isa_register_ioport(isadev, &s->ioport, s->iobase);
 
-    if (s->audio_be && audio_be_check(&s->audio_be, errp)) {
+    if (audio_be_check(&s->audio_be, errp)) {
         pcspk_audio_init(s);
         return;
     }

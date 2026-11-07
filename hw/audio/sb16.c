@@ -1,5 +1,5 @@
 /*
- * QEMU Soundblaster 16 emulation
+ * QEMU Sound Blaster 16 emulation
  *
  * Copyright (c) 2003-2005 Vassili Karpov (malc)
  *
@@ -113,7 +113,10 @@ struct SB16State {
     int align;
     int audio_free;
     SWVoiceOut *voice;
-    
+    SWVoiceIn *voice_in;
+    int recording;
+    int audio_avail;
+
     int32_t adpcm_valpred;
     int32_t adpcm_index;
 
@@ -214,6 +217,7 @@ static void sb16_opl_write(void *opaque, uint32_t nport, uint32_t val)
     uint16_t reg;
 
     audio_be_set_active_out(s->audio_be, s->voice_opl, 1);
+    sb16_update_opl_volume(s);
 
     switch (a) {
     case 0:  /* bank-0 address latch */
@@ -343,6 +347,7 @@ static uint64_t mpu_read(void *opaque, hwaddr addr, unsigned size)
 }
 
 static void SB_audio_callback (void *opaque, int free);
+static void SB_adc_callback(void *opaque, int avail);
 
 static int magic_of_irq (int irq)
 {
@@ -423,14 +428,25 @@ static void control (SB16State *s, int hold)
     //ldebug("hold %d high %d nchan %d\n", hold, s->use_hdma, nchan);
 
     if (hold) {
-	if (!s->voice) {
-        hold_DREQ(s, nchan);
-	}
-        audio_be_set_active_out(s->audio_be, s->voice, 1);
+        if (s->recording) {
+	    if (!s->voice_in) {
+                hold_DREQ(s, nchan);
+	    }
+            audio_be_set_active_in(s->audio_be, s->voice_in, 1);
+        } else {
+	    if (!s->voice) {
+                hold_DREQ(s, nchan);
+	    }
+            audio_be_set_active_out(s->audio_be, s->voice, 1);
+        }
     }
     else {
         release_DREQ(s, nchan);
-        audio_be_set_active_out(s->audio_be, s->voice, 0);
+        if (s->recording) {
+            audio_be_set_active_in(s->audio_be, s->voice_in, 0);
+        } else {
+            audio_be_set_active_out(s->audio_be, s->voice, 0);
+        }
     }
 }
 
@@ -450,20 +466,32 @@ static void continue_dma8 (SB16State *s)
         struct audsettings as;
 
         s->audio_free = 0;
+        s->audio_avail = 0;
 
         as.freq = s->freq;
         as.nchannels = 1 << s->fmt_stereo;
         as.fmt = s->fmt;
         as.big_endian = false;
 
-        s->voice = audio_be_open_out(
-            s->audio_be,
-            s->voice,
-            "sb16",
-            s,
-            SB_audio_callback,
-            &as
-            );
+        if (s->recording) {
+            s->voice_in = audio_be_open_in(
+                s->audio_be,
+                s->voice_in,
+                "sb16",
+                s,
+                SB_adc_callback,
+                &as
+                );
+        } else {
+            s->voice = audio_be_open_out(
+                s->audio_be,
+                s->voice,
+                "sb16",
+                s,
+                SB_audio_callback,
+                &as
+                );
+        }
     sb16_update_opl_volume(s);
 	sb16_update_voice_volume(s);
     }
@@ -538,6 +566,64 @@ static void dma_cmd8 (SB16State *s, int mask, int dma_len)
 
     continue_dma8 (s);
     speaker (s, 1);
+}
+
+static void adc_cmd8 (SB16State *s, int mask, int dma_len)
+{
+    s->fmt = AUDIO_FORMAT_U8;
+    s->use_hdma = 0;
+    s->fmt_bits = 8;
+    s->fmt_signed = 0;
+    s->fmt_stereo = (s->mixer_regs[0x0e] & 2) != 0;
+    if (-1 == s->time_const) {
+        if (s->freq <= 0)
+            s->freq = 11025;
+    }
+    else {
+        int tmp = (256 - s->time_const);
+        s->freq = (1000000 + (tmp / 2)) / tmp;
+    }
+    s->freq = restrict_sampling_rate(s->freq);
+
+    if (dma_len != -1) {
+        s->block_size = dma_len << s->fmt_stereo;
+    }
+    else {
+        s->block_size &= ~s->fmt_stereo;
+    }
+
+    s->freq >>= s->fmt_stereo;
+    s->left_till_irq = s->block_size;
+    s->bytes_per_second = (s->freq << s->fmt_stereo);
+    s->dma_auto = (mask & DMA8_AUTO) != 0;
+    s->align = (1 << s->fmt_stereo) - 1;
+
+    if (s->block_size & s->align) {
+        qemu_log_mask(LOG_GUEST_ERROR, "warning: misaligned block size %d,"
+                      " alignment %d\n", s->block_size, s->align + 1);
+    }
+
+    ldebug("adc freq %d, stereo %d, sign %d, bits %d, "
+            "dma %d, auto %d, fifo %d, high %d",
+            s->freq, s->fmt_stereo, s->fmt_signed, s->fmt_bits,
+            s->block_size, s->dma_auto, s->fifo, s->highspeed);
+
+    if (s->freq > 0) {
+        struct audsettings as;
+        s->audio_avail = 0;
+        as.freq = s->freq;
+        as.nchannels = 1 << s->fmt_stereo;
+        as.fmt = s->fmt;
+        as.big_endian = false;
+
+        s->voice_in = audio_be_open_in(
+            s->audio_be, s->voice_in, "sb16", s, SB_adc_callback, &as);
+    }
+    sb16_update_voice_volume(s);
+
+    s->recording = 1;
+    control(s, 1);
+    speaker(s, 1);
 }
 
 static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
@@ -717,6 +803,10 @@ static void command (SB16State *s, uint8_t cmd)
 
         case 0x1c:              /* Auto-Initialize DMA DAC, 8-bit */
             dma_cmd8 (s, DMA8_AUTO, -1);
+            break;
+
+        case 0x1e:              /* Auto-Initialize DMA ADC, 8-bit */
+            adc_cmd8 (s, DMA8_AUTO, -1);
             break;
 
         case 0x20:              /* Direct ADC, Juice/PL */
@@ -966,16 +1056,47 @@ static void complete (SB16State *s)
         d0 = dsp_get_data(s);
 
         if (s->cmd & 8) {
-		/* this is yet another todo for another time */
             ldebug("Executing ADC cmd=0x%x mode=%d len=%d", s->cmd, d0, d1 + (d2 << 8));
-            
+
             s->use_hdma = s->cmd < 0xc0;
             s->fmt_bits = (s->cmd >> 4) == 11 ? 16 : 8;
             s->fmt_signed = (d0 >> 4) & 1;
             s->fmt_stereo = (d0 >> 5) & 1;
-            s->block_size = (d1 + (d2 << 8) + 1) << (s->fmt_bits == 16);
+            s->dma_auto = (s->cmd >> 2) & 1;
+            s->fifo = (s->cmd >> 1) & 1;
 
+            if (16 == s->fmt_bits) {
+                s->fmt = s->fmt_signed ? AUDIO_FORMAT_S16 : AUDIO_FORMAT_U16;
+            } else {
+                s->fmt = s->fmt_signed ? AUDIO_FORMAT_S8 : AUDIO_FORMAT_U8;
+            }
+
+            s->block_size = (d1 + (d2 << 8) + 1) << (s->fmt_bits == 16);
+            s->left_till_irq = s->block_size;
+            s->bytes_per_second = (s->freq << s->fmt_stereo) << (s->fmt_bits == 16);
+            s->align = (1 << (s->fmt_stereo + (s->fmt_bits == 16))) - 1;
+
+            if (s->block_size & s->align) {
+                qemu_log_mask(LOG_GUEST_ERROR, "warning: misaligned block size %d,"
+                              " alignment %d\n", s->block_size, s->align + 1);
+            }
+
+            if (s->freq) {
+                struct audsettings as;
+                s->audio_avail = 0;
+
+                as.freq = s->freq;
+                as.nchannels = 1 << s->fmt_stereo;
+                as.fmt = s->fmt;
+                as.big_endian = false;
+
+                s->voice_in = audio_be_open_in(
+                    s->audio_be, s->voice_in, "sb16", s, SB_adc_callback, &as);
+            }
+
+            s->recording = 1;
             control(s, 1);
+            speaker(s, 1);
         }
         else {
             dma_cmd(s, s->cmd, d0, d1 + (d2 << 8));
@@ -1166,6 +1287,9 @@ static void legacy_reset (SB16State *s)
 {
     struct audsettings as;
 
+    s->recording = 0;
+    s->audio_avail = 0;
+
     s->freq = 11025;
     s->fmt_signed = 0;
     s->fmt_bits = 8;
@@ -1187,6 +1311,15 @@ static void legacy_reset (SB16State *s)
         &as
         );
 
+    s->voice_in = audio_be_open_in(
+        s->audio_be,
+        s->voice_in,
+        "sb16",
+        s,
+        SB_adc_callback,
+        &as
+        );
+
     /* Not sure about that... */
     /* audio_be_set_active_out (s->audio_be, s->voice, 1); */
 }
@@ -1198,6 +1331,13 @@ static void reset (SB16State *s)
         qemu_irq_raise (s->pic);
         qemu_irq_lower (s->pic);
     }
+
+    if (s->voice_in) {
+        audio_be_close_in(s->audio_be, s->voice_in);
+        s->voice_in = NULL;
+    }
+    s->recording = 0;
+    s->audio_avail = 0;
 
     s->mixer_regs[0x82] = 0;
     s->dma_auto = 0;
@@ -1560,6 +1700,66 @@ static int write_audio (SB16State *s, int nchan, int dma_pos,
 static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 {
     SB16State *s = opaque;
+
+    if (s->recording) {
+        IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
+        IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
+        uint8_t tmpbuf[4096];
+        int till, avail, to_copy, acquired = 0, written = 0;
+
+        if (s->block_size <= 0) {
+            return dma_pos;
+        }
+
+        if (s->left_till_irq < 0) {
+            s->left_till_irq = s->block_size;
+        }
+
+        if (s->voice_in) {
+            avail = s->audio_avail & ~s->align;
+            if (avail <= 0) {
+                release_DREQ(s, nchan);
+                return dma_pos;
+            }
+        } else {
+            avail = dma_len;
+        }
+
+        till = s->left_till_irq;
+        to_copy = MIN(avail, till);
+        to_copy = MIN(to_copy, dma_len - dma_pos);
+        if (to_copy > (int)sizeof(tmpbuf)) {
+            to_copy = sizeof(tmpbuf);
+        }
+
+        acquired = audio_be_read(s->audio_be, s->voice_in, tmpbuf, to_copy);
+        if (acquired > 0) {
+            written = k->write_memory(isa_dma, nchan, tmpbuf, dma_pos, acquired);
+        }
+
+        dma_pos = (dma_pos + written) % dma_len;
+        s->left_till_irq -= written;
+        s->audio_avail -= written;
+
+        if (s->left_till_irq <= 0) {
+            s->mixer_regs[0x82] |= (nchan & 4) ? 2 : 1;
+            qemu_irq_raise(s->pic);
+
+            if (s->block_size > 0) {
+                s->left_till_irq = s->block_size + (s->left_till_irq % s->block_size);
+            } else {
+                s->left_till_irq = s->block_size = 1024;
+            }
+
+            if (s->dma_auto == 0) {
+                control(s, 0);
+                speaker(s, 0);
+            }
+        }
+
+        return dma_pos;
+    }
+
     int till, copy, written = 0, free;
     
     IsaDma *isa_dma = nchan == s->dma ? s->isa_dma : s->isa_hdma;
@@ -1590,6 +1790,17 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 
     to_copy = MIN(copy, till);
 
+    if (s->cmd == 0x75) {
+        uint8_t ref_byte;
+     
+        k->read_memory(isa_dma, nchan, &ref_byte, dma_pos, 1);
+        s->adpcm_valpred = (int16_t)((ref_byte - 128) << 8);
+        s->adpcm_index = 0;
+
+        dma_pos = (dma_pos + 1) % dma_len;
+        s->cmd = 0x74;
+    }
+
     if (s->cmd == 0x74) {
         to_copy = MIN(to_copy, dma_len - dma_pos);
         if (to_copy > (int)sizeof(tmpbuf) / 4) {
@@ -1609,17 +1820,6 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
         written = bytes_out / 4;
     } else {
         written = write_audio(s, nchan, dma_pos, dma_len, to_copy);
-    }
-
-    if (s->cmd == 0x75) {
-        uint8_t ref_byte;
-    
-        k->read_memory(isa_dma, nchan, &ref_byte, dma_pos, 1);
-        s->adpcm_valpred = (int16_t)((ref_byte - 128) << 8);
-        s->adpcm_index = 0;
-
-        dma_pos = (dma_pos + 1) % dma_len;
-        s->cmd = 0x74; 
     }
 
     dma_pos = (dma_pos + written) % dma_len;
@@ -1654,6 +1854,14 @@ static void SB_audio_callback (void *opaque, int free)
     hold_DREQ(s, nchan);
 }
 
+static void SB_adc_callback(void *opaque, int avail)
+{
+    SB16State *s = opaque;
+    int nchan = s->use_hdma ? s->hdma : s->dma;
+    s->audio_avail = avail;
+    hold_DREQ(s, nchan);
+}
+
 static int sb16_post_load (void *opaque, int version_id)
 {
     SB16State *s = opaque;
@@ -1663,25 +1871,42 @@ static int sb16_post_load (void *opaque, int version_id)
         s->voice = NULL;
     }
 
+    if (s->voice_in) {
+        audio_be_close_in(s->audio_be, s->voice_in);
+        s->voice_in = NULL;
+    }
+
     if (s->dma_running) {
         if (s->freq) {
             struct audsettings as;
 
             s->audio_free = 0;
+            s->audio_avail = 0;
 
             as.freq = s->freq;
             as.nchannels = 1 << s->fmt_stereo;
             as.fmt = s->fmt;
             as.big_endian = false;
 
-            s->voice = audio_be_open_out(
-                s->audio_be,
-                s->voice,
-                "sb16",
-                s,
-                SB_audio_callback,
-                &as
-                );
+            if (s->recording) {
+                s->voice_in = audio_be_open_in(
+                    s->audio_be,
+                    s->voice_in,
+                    "sb16",
+                    s,
+                    SB_adc_callback,
+                    &as
+                    );
+            } else {
+                s->voice = audio_be_open_out(
+                    s->audio_be,
+                    s->voice,
+                    "sb16",
+                    s,
+                    SB_audio_callback,
+                    &as
+                    );
+            }
         }
 
         control (s, 1);
@@ -1738,6 +1963,8 @@ static const VMStateDescription vmstate_sb16 = {
         VMSTATE_INT32 (nzero, SB16State),
         VMSTATE_INT32 (left_till_irq, SB16State),
         VMSTATE_INT32 (dma_running, SB16State),
+        VMSTATE_INT32 (recording, SB16State),
+        VMSTATE_INT32 (audio_avail, SB16State),
         VMSTATE_INT32 (bytes_per_second, SB16State),
         VMSTATE_INT32 (align, SB16State),
 
